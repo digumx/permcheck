@@ -1,0 +1,8 @@
+*.vim*
+*tag*
+*build*
+*out*
+*cache*
+*catche*
+*data*
+
