@@ -29,37 +29,29 @@ class LinearPostcond:
     num_neuron  -   The number of neurons this condition is over, that is, the dimensionality of c.    
     """
     
-    def __init__(self, M : ArrayLike, c : ArrayLike):
+    def __init__(self, *args):
         """
-        Construct from a pair of basis matrix, and center point.
+        Construct a new `LinearPostcond`. If one argument is given, it is assumed to be the packed
+        matrix representing the postcondition. Else, two arguments are expected, one being a matrix
+        where each vector is a basis, and the other being the vector c.
         """
-
-        # Invariant for LinearPostcond TODO remove
-        assert M.ndim == 2
-        assert c.ndim == 1
-        assert M.shape[1] == c.shape[0]
-        
-        self.packed_mat : ArrayLike = np.zeros((k+1, n))
-        self.packed_mat[:-1, :] = M
-        self.packed_mat[-1, :] = c
+    
+        if len(args) == 1:
+            self.packed_mat = args[0]
+        else:
+            # Invariant for LinearPostcond TODO remove
+            assert args[0].ndim == 2
+            assert args[1].ndim == 1
+            assert args[0].shape[1] == args[1].shape[0]
+            self.packed_mat : ArrayLike = np.zeros((k+1, n))
+            self.packed_mat[:-1, :] = args[0]
+            self.packed_mat[-1, :] = args[1]
+            
         self.basis : ArrayLike = self.packed_mat[:-1, :]
         self.center : ArrayLike = self.packed_mat[-1, :]
-        self.reg_dim : int = M.shape[0]
-        self.num_neuron : int = M.shape[1]
+        self.reg_dim : int = self.packed_mat.shape[0] - 1
+        self.num_neuron : int = self.packed_mat.shape[1]
 
-    #def __init__(self, pkd : ArrayLike):
-    #    """
-    #    Construct from a packed matrix of the form of packed_mat. Note that this does not copy the
-    #    passed matrix, but reuses it instead.
-    #    """
-
-    #    assert pkd.ndim == 2
-
-    #    self.packed_mat : ArrayLike = pkd
-    #    self.basis : ArrayLike = self.packed_mat[:-1, :]
-    #    self.center : ArrayLike = self.packed_mat[-1, :]
-    #    self.reg_dim : int = M.shape[0]
-    #    self.num_neuron : int = M.shape[1]
 
 
 def tie_classify_lp(left_cond: LinearPostcond) -> List[ArrayLike]:
@@ -85,7 +77,7 @@ def tie_classify_lp(left_cond: LinearPostcond) -> List[ArrayLike]:
         
         # While there are more tie classes to be found
         while len(tc_src) > 0:
-            print(f"Remaining number of neurons to classify: {len(tc_src)}", end='\r')
+            print(f"Remaining number of neurons to classify: {len(tc_src)}      ", end='\r')
 
             i = tc_src[0]
             tc_src_ = []
@@ -93,20 +85,30 @@ def tie_classify_lp(left_cond: LinearPostcond) -> List[ArrayLike]:
 
             # The following lp a.x <= b denotes the x for which i'th relu will have a positive or
             # negative value, depending on weather we are checking tc_pos, or tc_neg
-            a = (-sgn) * left_cond.basis[np.newaxis,:,i]    # ax + b >= 0  -->  (-a)x <= b
-            b = sgn * left_cond.center[np.newaxis,i]                   # ax + b <= 0  -->  ax <= -b
+            a = (-sgn) * left_cond.basis[np.newaxis,:,i]            # ax + b >= 0  -->  (-a)x <= b
+            b = sgn * left_cond.center[np.newaxis,i]                # ax + b <= 0  -->  ax <= -b
             #print("a, b: ", a, b) #DEBUG
 
             # For each other index in source of indices
             for j in tc_src[1:]:
-                #print(f"Indices {i}, {j}:")  #DEBUG
+                
                 # Run solver for each pair in i,j. We find the exremal value of the j'th relu
-                res = linprog(sgn * left_cond.basis[:,j], a, b, bounds = bnds,
+                res1 = linprog(sgn * left_cond.basis[:,j], a, b, bounds = bnds,
                                     method = SCIPY_LINPROG_METHOD)
-                if res.status != 0:
-                    raise RuntimeError("Linear optimizer failed with {res.staus}")
+                
+                # Now reverse and set j to a quadrant and check if i is out of that qudrant
+                a_ = (-sgn) * left_cond.basis[np.newaxis,:,j]           # ax + b >= 0  -->  (-a)x <= b
+                b_ = sgn * left_cond.center[np.newaxis,j]               # ax + b <= 0  -->  ax <= -b
+                
+                # And, We find the exremal value of the i'th relu
+                res2 = linprog(sgn * left_cond.basis[:,i], a_, b_, bounds = bnds,
+                                    method = SCIPY_LINPROG_METHOD)
+                
+                if res1.status != 0 or res2.status != 0:
+                    raise RuntimeError(f"Linear optimizer failed with {res1.staus}, {res2.status}")
                 # Analyze result.
-                if res.fun >= (-sgn) * left_cond.center[j]:     
+                if res1.fun >= (-sgn) * left_cond.center[j] \
+                    and res2.fun >= (-sgn) * left_cond.center[i]:     
                     tc.append(j)                                # Same tie class
                     #print("Tied")   #DEBUG
                 else:
@@ -139,7 +141,7 @@ def tie_classify_bound(left_cond: LinearPostcond) -> List[ArrayLike]:
         
         # While there are more tie classes to be found
         while len(tc_src) > 0:
-            print(f"Remaining number of neurons to classify: {len(tc_src)}", end='\r')
+            print(f"Remaining number of neurons to classify: {len(tc_src)}      ", end='\r')
 
             i = tc_src[0]
             tc_src_ = []
@@ -263,6 +265,7 @@ if __name__ == '__main__':
     #bound = np.array([1, 1, 1, 1])
 
     import random
+    import sys
 
     k = 200
     n = 200
@@ -273,6 +276,67 @@ if __name__ == '__main__':
     
     t_1, t_2 = 0,0
 
+    basis, center, tc1, tc2 = None, None, None, None
+    
+    def fail_dump():
+        global n, k, basis, center, tc1, tc2
+        # Dump basis, center and tie classes found to log if methods do not match.
+        data = {}
+        data['basis'] = [ [ c for c in b ] for b in basis ]
+        data['center'] = [ c for c in center ]
+        data['tc1'] = [ [ tm for tm in tc ] for tc in tc1 ]
+        data['tc2'] = [ [ tm for tm in tc ] for tc in tc2 ]
+        with open(sys.argv[1], 'w') as log:
+            log.write(str(data))
+        
+    def run_tc1():
+        global tc1, basis, center
+        print("Running lp based tie classifier")
+        tc1 = tie_classify_lp(LinearPostcond(basis, center))
+    
+    def run_tc2():
+        global tc2, basis, center   
+        print("Running bounds based tie classifier")
+        tc2 = tie_classify_bound(LinearPostcond(basis, center))
+   
+    def check_tc_same(tc1, tc2):
+        tc2_ = tc2[:]
+        if len(tc1) != len(tc2):
+            print("FAILED")
+            fail_dump()
+            exit()
+        for c1 in tc1:
+            i0 = -1
+            for i, c2 in enumerate(tc2_):
+                if set(c1.tolist()) == set(c2.tolist()):
+                    i0 = i
+                    break
+            if i0 == -1:
+                print("FAILED")
+                fail_dump()
+                exit()
+            tc2_ = (tc2_[:i0] + tc2_[i0+1:]) if i0 < len(tc2_) - 1 else tc2_[:-1]
+        
+        if len(tc2_) > 0:
+            print("FAILED")
+            fail_dump()
+            exit()
+    
+    if len(sys.argv) >= 3 and sys.argv[2] == 'checklog':
+        with open(sys.argv[1], 'r') as log:
+            data = eval(log.read())
+            basis = np.array(data['basis'])
+            center = np.array(data['center'])
+            
+            t_1 += timeit(run_tc1, number=1)
+            t_2 += timeit(run_tc2, number=1)
+        
+            print("Checking equality")
+            check_tc_same(tc1, tc2)
+            print("SUCCESS")
+            
+            exit()
+    
     for i in range(n_run):
         print(f"Run {i} of {n_run}")
 
@@ -287,39 +351,13 @@ if __name__ == '__main__':
         basis[pos_idx] -= 1-p0
         basis[pos_idx] /= 1-p0
         center = (np.random.rand(n) - 0.5) * cenvar
-
-        def run_tc1():
-            global tc1, basis, center
-            print("Running lp based tie classifier")
-            tc1 = tie_classify_lp(LinearPostcond(basis, center))
         
-        def run_tc2():
-            global tc2, basis, center   
-            print("Running bounds based tie classifier")
-            tc2 = tie_classify_bound(LinearPostcond(basis, center))
 
         t_1 += timeit(run_tc1, number=1)
         t_2 += timeit(run_tc2, number=1)
 
         print("Checking equality")
-        tc2_ = tc2[:]
-        if len(tc1) != len(tc2):
-            print("FAILED")
-            exit()
-        for c1 in tc1:
-            i0 = -1
-            for i, c2 in enumerate(tc2_):
-                if c1 == c2:
-                    i0 = i
-                    break
-            if i0 == -1:
-                print("FAILED")
-                exit()
-            tc2_ = (tc2_[:i0] + tc2_[i0+1:]) if i0 < len(tc2_) - 1 else tc2_[:-1]
-        
-        if len(tc2_) > 0:
-            print("FAILED")
-            exit()
+        check_tc_same(tc1, tc2)
         print("SUCCESS")
 
     t_1 /= n_run
