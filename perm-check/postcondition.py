@@ -8,6 +8,7 @@ from typing import List
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import linprog
+from numpy.linalg import svd
 
 from global_consts import SCIPY_LINPROG_METHOD, FLOAT_ATOL, FLOAT_RTOL
 
@@ -32,7 +33,7 @@ class LinearPostcond:
     def __init__(self, *args):
         """
         Construct a new `LinearPostcond`. If one argument is given, it is assumed to be the packed
-        matrix representing the postcondition. Else, two arguments are expected, one being a matrix
+        matrix representing the postcondition. Else, two arguments are expected, first being a matrix
         where each vector is a basis, and the other being the vector c.
         """
     
@@ -122,11 +123,14 @@ def tie_classify_lp(left_cond: LinearPostcond) -> List[ArrayLike]:
     return tie_classes
 
 
+# TODO Refactor this function out
 def tie_classify_bound(left_cond: LinearPostcond) -> List[ArrayLike]:
     """
-    Given a linear postcondition, uses bound analysis to generate a list of tie classes.  The tie
-    classes are returned as a list of numpy index arrays, each element in the list refering to a tie
-    class.
+    Given a linear postcondition, uses bound analysis to generate a list of tie classes. For each
+    tie class, it also checks if the tie class contains components which take both positive and
+    negative values. Returns two lists. The first one has a numpy array of indices in each tie
+    class, and the second has boolean values for the respective tie classes denoting weather the
+    components in the class can have both signs in the left space.
     """
 
     # The center point defines some of the cuts for the tie class - things in the same tie class
@@ -136,6 +140,7 @@ def tie_classify_bound(left_cond: LinearPostcond) -> List[ArrayLike]:
 
     # Do the tie class analysis for each group. The sign denotes which region we are operating on.
     tie_classes = []
+    pos_and_neg = []
     for tc_src, sgn in ((tc_pos, 1), (tc_neg, -1)):
         print(f"Checking group {sgn}") #DEBUG
         
@@ -146,6 +151,7 @@ def tie_classify_bound(left_cond: LinearPostcond) -> List[ArrayLike]:
             i = tc_src[0]
             tc_src_ = []
             tc = [i]
+            pan = True
 
             i_cent = left_cond.center[i]
             i_col = left_cond.basis[:,i]
@@ -162,6 +168,7 @@ def tie_classify_bound(left_cond: LinearPostcond) -> List[ArrayLike]:
                 
                 # If both bounded, both are in same tie class
                 if i_bdd and sgn * j_cent - np.sum(np.absolute(j_col)) >= 0:
+                    pan = False
                     tc.append(j)
                 # Else, check if joint system is one dimensional
                 elif np.allclose( np.inner(i_vec, j_vec), np.linalg.norm(i_vec) * np.linalg.norm(j_vec),
@@ -172,98 +179,70 @@ def tie_classify_bound(left_cond: LinearPostcond) -> List[ArrayLike]:
                     tc_src_.append(j)
             
             tie_classes.append(np.array(tc))
+            pos_and_neg.append(pan)
             tc_src = tc_src_
         print()
 
-    return tie_classes
+    return tie_classes, pos_and_neg
                  
 
-    
-
-
-# TODO Complete
-def push_forward_relu_tie_class(left_cond: LinearPostcond) -> LinearPostcond:
+def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
     """
-    Pushes a `LinearPostcondition` across a ReLu layer using the tie-class analysis.
+    Pushes forward a `LinearPostcond` across a relu via tie class analysis. Returns the
+    `LinearPostcond` to the right side of the relu.
     """
-
-    ## Calculate tie classes
     
-    # The center point defines some of the cuts for the tie class - things in the same tie class
-    # should have same sign in center.
-    tc_pos = np.where(left_cond.center >= 0)[0]
-    tc_neg = np.where(left_cond.center < 0)[0]
-
-    # Bounds to use for lp
-    bnds = np.array([-left_cond.bound, left_cond.bound]).transpose()
+    # Use one of the above methods to calculate the tie classes. Bounds is significantly faster.
+    tie_classes, unit_rank = tie_classify_bound(left_cond)
     
-    # Do the tie class analysis for each group. The sign are so that the region of the lp used to
-    # detect tie classes can always be written as ax <= b.
-    tie_classes = []
-    for tc_src, sgn in ((tc_pos, 1), (tc_neg, -1)):
-        print(f"Checking group {sgn} with {tc_src} indices") #DEBUG
+    out_list = []
+    n_basis = 0
+    
+    # For each tie class, chose a minimal orthogonal basis representing the right space of the tie
+    # class.
+    for tc, urg in zip(tie_classes, unit_rank):
         
-        # While there are more tie classes to be found
-        while len(tc_src) > 0:
-            print(f"Remaining number of neurons to classify: {len(tc_src)}")
-
-            i = tc_src[0]
-            tc_src_ = []
-            tc = [i]
-
-            # The following lp a.x <= b denotes the x for which i'th relu will have a positive or
-            # negative value, depending on weather we are checking tc_pos, or tc_neg
-            a = (-sgn) * left_cond.basis[np.newaxis,:,i]    # ax + b >= 0  -->  (-a)x <= b
-            b = sgn * left_cond.center[np.newaxis,i]                   # ax + b <= 0  -->  ax <= -b
-            #print("a, b: ", a, b) #DEBUG
-
-            # For each other index in source of indices
-            for j in tc_src[1:]:
-                #print(f"Indices {i}, {j}:")  #DEBUG
-                # Run solver for each pair in i,j. We find the exremal value of the j'th relu
-                res = linprog(sgn * left_cond.basis[:,j], a, b, bounds = bnds,
-                                    method = SCIPY_LINPROG_METHOD)
-                if res.status != 0:
-                    raise RuntimeError("Linear optimizer failed")
-                # Analyze result.
-                if res.fun >= (-sgn) * left_cond.center[j]:     
-                    tc.append(j)                                # Same tie class
-                    #print("Tied")   #DEBUG
-                else:
-                    tc_src_.append(j)                           # We will look at this again
-                    #print("Untied")   #DEBUG
-            
-            tie_classes.append(tc)
-            tc_src = tc_src_
-        print()
-
-    print(tie_classes)      # DEBUG
+        # Early shortcut if tie class has only one element
+        if len(tc) == 1:
+            v = np.array([[ np.sum(np.absolute(left_cond.basis[:,tc[0]])) ]])
+            out_list.append((tc, v, n_basis, n_basis+1))
+            n_basis += 1
+            continue
+        
+        tcg = left_cond.basis[:,tc]             # The generating vectors for the tie class
+        #print(f"tcg {tcg.shape}") #DEBUG
+        u, s, v = svd(tcg)                      # Perform svd
+        #print(f"u {u.shape} s {s.shape} v {v.shape}") #DEBUG
+        
+        # Find the rank of tcg
+        rnk = 1 if urg else np.amax(np.where(np.absolute(s) >= FLOAT_ATOL))+1
+        u = u[:, :rnk]                          # Trim u, s, v.
+        s = s[:rnk]
+        v = v[:rnk, :]
+        b = np.sum(np.absolute(u*s), axis=0)    # New bounds
+        
+        #print(f"u {u.shape} s {s.shape} v {v.shape}") #DEBUG
+        
+        # Add in required info to list of stuff
+        out_list.append((tc, v / b[:,np.newaxis], n_basis, n_basis+rnk))
+        n_basis += rnk
+        
+    # Create basis matrix
+    basis = np.zeros((n_basis, left_cond.num_neuron))
+    for tc, bs, rb, eb in out_list:
+        basis[rb:eb, tc] = bs
+        
+    # New center is relu of old center
+    center = np.copy(left_cond.center)
+    center[np.where(left_cond.center < 0)] = 0
+    
+    return LinearPostcond(basis, center)
 
 
 if __name__ == '__main__':
 
 
     from timeit import timeit
-
-    #basis = np.array([  [1, 1, 0, 0],
-    #                    [1, 1, 1, 0],
-    #                    [1, 1, 1, 1]    ])
-    #center = np.array([0, 0, 0, 0])
-    #bound = np.array([1, 1, 1])
-    
-    #basis = np.array([  [1, 0, 0, 0],
-    #                    [0, 1, 0, 0],
-    #                    [0, 0, 1, 0],
-    #                    [0, 0, 0, 1]    ])
-    #center = np.array([2, 2, -2, -2])
-    #bound = np.array([1, 1, 1, 1])
-    
-    #basis = np.array([  [1, 1, 0, 0],
-    #                    [0, 0, 1, 0],
-    #                    [0, 0, 0, 1]    ])
-    #center = np.array([2, 2, -2, -2])
-    #bound = np.array([1, 1, 1, 1])
-
     import random
     import sys
 
@@ -271,71 +250,42 @@ if __name__ == '__main__':
     n = 200
     invar = 10
     cenvar = 10
-    p0 = random.random() * 0.150
+    p0 = random.random() * 0.1
     n_run = 1000
     
-    t_1, t_2 = 0,0
+    t = 0
 
-    basis, center, tc1, tc2 = None, None, None, None
+    basis, center = None, None
     
     def fail_dump():
         global n, k, basis, center, tc1, tc2
         # Dump basis, center and tie classes found to log if methods do not match.
         data = {}
-        data['basis'] = [ [ c for c in b ] for b in basis ]
-        data['center'] = [ c for c in center ]
-        data['tc1'] = [ [ tm for tm in tc ] for tc in tc1 ]
-        data['tc2'] = [ [ tm for tm in tc ] for tc in tc2 ]
+        data['basis'] = basis.tolist()
+        data['center'] = center.tolist()
         with open(sys.argv[1], 'w') as log:
             log.write(str(data))
         
-    def run_tc1():
+    def run_pf():
         global tc1, basis, center
-        print("Running lp based tie classifier")
-        tc1 = tie_classify_lp(LinearPostcond(basis, center))
+        print("Running bound based push forward")
+        push_forward_postcond_relu(LinearPostcond(basis, center))
     
-    def run_tc2():
-        global tc2, basis, center   
-        print("Running bounds based tie classifier")
-        tc2 = tie_classify_bound(LinearPostcond(basis, center))
-   
-    def check_tc_same(tc1, tc2):
-        tc2_ = tc2[:]
-        if len(tc1) != len(tc2):
-            print("FAILED")
-            fail_dump()
-            exit()
-        for c1 in tc1:
-            i0 = -1
-            for i, c2 in enumerate(tc2_):
-                if set(c1.tolist()) == set(c2.tolist()):
-                    i0 = i
-                    break
-            if i0 == -1:
-                print("FAILED")
-                fail_dump()
-                exit()
-            tc2_ = (tc2_[:i0] + tc2_[i0+1:]) if i0 < len(tc2_) - 1 else tc2_[:-1]
-        
-        if len(tc2_) > 0:
-            print("FAILED")
-            fail_dump()
-            exit()
-    
-    if len(sys.argv) >= 3 and sys.argv[2] == 'checklog':
-        with open(sys.argv[1], 'r') as log:
+    if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
+        with open(sys.argv[1]) as log:
             data = eval(log.read())
             basis = np.array(data['basis'])
             center = np.array(data['center'])
             
-            t_1 += timeit(run_tc1, number=1)
-            t_2 += timeit(run_tc2, number=1)
-        
-            print("Checking equality")
-            check_tc_same(tc1, tc2)
-            print("SUCCESS")
+            print("Running pushforward")
+            try:
+                t += timeit(run_pf, number=1)
+            except Exception as e:
+                fail_dump()
+                raise e
             
             exit()
+            
     
     for i in range(n_run):
         print(f"Run {i} of {n_run}")
@@ -352,15 +302,13 @@ if __name__ == '__main__':
         basis[pos_idx] /= 1-p0
         center = (np.random.rand(n) - 0.5) * cenvar
         
+        print("Running pushforward")
+        try:
+            t += timeit(run_pf, number=1)
+        except Exception as e:
+            fail_dump()
+            raise e
 
-        t_1 += timeit(run_tc1, number=1)
-        t_2 += timeit(run_tc2, number=1)
-
-        print("Checking equality")
-        check_tc_same(tc1, tc2)
-        print("SUCCESS")
-
-    t_1 /= n_run
-    t_2 /= n_run
-    print(f"The time for LP using {SCIPY_LINPROG_METHOD} is {t_1}, and for the other method is {t_2}")
+    t /= n_run
+    print(f"The average time for pushforward is {t}")
     print(f"There were {n} relu neurons and the left space was {k} dimensional")
