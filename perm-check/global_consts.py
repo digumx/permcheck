@@ -46,6 +46,8 @@ SCIPY_SVD_METHOD = ScipySVDMethod.GESDD.value
 
 
 
+
+
 """
 Numerical constants, for checking closeness of floating point numbers. Two floats a and b are
 considered 'close' if |b - a| < abs(b) * FLOAT_RTOL + FLOAT_ATOL. The values used in numpy are given
@@ -54,3 +56,17 @@ at: https://numpy.org/doc/stable/reference/generated/numpy.allclose.html, these 
 FLOAT_RTOL = 1e-5
 FLOAT_ATOL = 1e-8
 
+
+
+
+"""
+Configuration relating to the push forward of postconditions.
+"""
+
+"""
+If set tu true, when postconditions are pushed forward, redundant generating vectors are discarded
+and only a minimal basis is maintained. This reduces the number of vectors to keep track of and
+improves performance of future push forwards and inclusion checks, but introduces unreachable
+behavior and weakens the postcondition.
+"""
+REDUCE_POSTCOND_BASIS = True

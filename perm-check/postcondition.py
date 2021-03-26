@@ -10,7 +10,8 @@ from numpy.typing import ArrayLike
 from scipy.optimize import linprog
 from scipy.linalg import svd
 
-from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL
+from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL, REDUCE_POSTCOND_BASIS
+
 
 
 class LinearPostcond:
@@ -57,6 +58,29 @@ class LinearPostcond:
         self.center : ArrayLike = self.packed_mat[-1, :]
 
 
+def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
+    """
+    Given `bss` as the generating set of vectors for a postcondition, returns an optimized minimal
+    orthogonal basis that captures all the behavior of the given postcondition. Thus, replacing
+    the "basis" of a postcondition to the output of this function on the "basis" captures all
+    behavior and reduces the dimension of the postcondition. If `rnk` is given, it is assumed to be
+    the rank of `bss`.
+    
+    NOTE: This destroys the input bss.
+    """
+    
+    u, s, v = svd(bss, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
+    
+    # Find the rank of bss
+    rnk = rnk if rnk is not None else np.amax(np.where(np.absolute(s) >= FLOAT_ATOL))+1
+    u = u[:, :rnk]                          # Trim u, s, v.
+    s = s[:rnk]
+    v = v[:rnk, :]
+    b = np.sum(np.absolute(u*s), axis=0)    # New bounds
+    
+    return v / b[:, np.newaxis]
+
+    
 
 def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
     """
@@ -122,20 +146,19 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
                 out_list.append((tc, v, n_basis, n_basis+1))
                 n_basis += 1
             
-            else:
-                tcg = left_cond.basis[:,tc]             # The generating vectors for the tie class
-                u, s, v = svd(tcg, overwrite_a=True, check_finite=False,
-                                                lapack_driver=SCIPY_SVD_METHOD)
-                
-                # Find the rank of tcg
-                rnk = 1 if rnk_1 else np.amax(np.where(np.absolute(s) >= FLOAT_ATOL))+1
-                u = u[:, :rnk]                          # Trim u, s, v.
-                s = s[:rnk]
-                v = v[:rnk, :]
-                b = np.sum(np.absolute(u*s), axis=0)    # New bounds
-                
+            # Else reduce basis
+            elif REDUCE_POSTCOND_BASIS: 
+                out_b = optimize_postcond_basis(left_cond.basis[:,tc], rnk = 1 if rnk_1 else None)
+                rnk = out_b.shape[0]
                 # Add in required info to list of stuff
-                out_list.append((tc, v / b[:,np.newaxis], n_basis, n_basis+rnk))
+                out_list.append((tc, out_b, n_basis, n_basis+rnk))
+                n_basis += rnk
+            
+            # Else just add the generating vectors in
+            else:
+                tcg = left_cond.basis[:,tc]
+                rnk = len(tc)
+                out_list.append((tc, tcg, n_basis, n_basis+rnk))
                 n_basis += rnk
                
             tc_src = tc_src_                            # Update list of unclassified indices
@@ -172,12 +195,14 @@ def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: Array
     post_spn = relupc.basis @ weights
     post_center = relupc.center @ weights + bias
     
-    # Optimise span to basisl
-    _, s, v = svd(post_spn, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
-    rnk = np.amax(np.where(np.absolute(s) >= FLOAT_ATOL)) + 1
-    post_basis = v[:rnk, :]                             # Trim u to get basis
+    # Optimise span to basis
+    if REDUCE_POSTCOND_BASIS:
+        post_basis = optimize_postcond_basis(post_spn)
+        return LinearPostcond(post_basis, post_center)
     
-    return LinearPostcond(post_basis, post_center)
+    # Or just return as is
+    return LinearPostcond(post_spn, post_center)    
+    
     
 
 
