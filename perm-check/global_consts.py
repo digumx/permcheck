@@ -10,7 +10,7 @@ from enum import Enum
 
 
 """
-Configuration for the `scipy.optimize.linprog` linear solver.
+Configuration for various scipy linear arlgebra algos.
 """
 
 
@@ -32,6 +32,17 @@ class ScipyLinprogMethod(Enum):
     LEG_SIMPLEX = 'simplex'         # The legacy simplex implementation
 
 SCIPY_LINPROG_METHOD = ScipyLinprogMethod.HIGHS_DS.value    # Must be one of the above
+
+
+class ScipySVDMethod(Enum):
+    """
+    What method to use for the SVD decomposition for a matrix. Documentation and SO suggests that
+    GESDD should be fastest.
+    """
+    GESDD   = 'gesdd'       # New Divide and conquer method
+    GESVD   = 'gesvd'       # Old rectangular method, used by matlab
+
+SCIPY_SVD_METHOD = ScipySVDMethod.GESDD.value
 
 
 

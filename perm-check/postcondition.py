@@ -8,9 +8,9 @@ from typing import List
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import linprog
-from numpy.linalg import svd
+from scipy.linalg import svd
 
-from global_consts import SCIPY_LINPROG_METHOD, FLOAT_ATOL, FLOAT_RTOL
+from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL
 
 
 class LinearPostcond:
@@ -39,19 +39,22 @@ class LinearPostcond:
     
         if len(args) == 1:
             self.packed_mat = args[0]
+            self.reg_dim : int = self.packed_mat.shape[0] - 1
+            self.num_neuron : int = self.packed_mat.shape[1]
         else:
             # Invariant for LinearPostcond TODO remove
             assert args[0].ndim == 2
             assert args[1].ndim == 1
             assert args[0].shape[1] == args[1].shape[0]
-            self.packed_mat : ArrayLike = np.zeros((k+1, n))
+            
+            self.reg_dim = args[0].shape[0]
+            self.num_neuron = args[0].shape[1]
+            self.packed_mat : ArrayLike = np.zeros((self.reg_dim+1, self.num_neuron))
             self.packed_mat[:-1, :] = args[0]
             self.packed_mat[-1, :] = args[1]
             
         self.basis : ArrayLike = self.packed_mat[:-1, :]
         self.center : ArrayLike = self.packed_mat[-1, :]
-        self.reg_dim : int = self.packed_mat.shape[0] - 1
-        self.num_neuron : int = self.packed_mat.shape[1]
 
 
 
@@ -121,7 +124,8 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
             
             else:
                 tcg = left_cond.basis[:,tc]             # The generating vectors for the tie class
-                u, s, v = svd(tcg)                      # Perform svd
+                u, s, v = svd(tcg, overwrite_a=True, check_finite=False,
+                                                lapack_driver=SCIPY_SVD_METHOD)
                 
                 # Find the rank of tcg
                 rnk = 1 if rnk_1 else np.amax(np.where(np.absolute(s) >= FLOAT_ATOL))+1
@@ -149,6 +153,33 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
     return LinearPostcond(basis, center)
 
 
+def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: ArrayLike) \
+                                                                            -> LinearPostcond:
+    """
+    Push forward a linear postcondition across a layer of a Neural Network. Assuming the given
+    postcondition to be on the values entering the relu of the i-th layer, returns a postcondition
+    on the values entering the relu of the (i+1)-th layer. The arguments are:
+    
+    0.  postc   -   The postcondition before the relu of the of the i-th layer.
+    1.  weights -   The weights of the (i+1)-th layer's linear transform
+    2.  biases  -   The biases of the (i+1)-th layer's linear transform
+    """
+    
+    # Push forward across relu
+    relupc = push_forward_postcond_relu(postc)
+    
+    # Push forward across linear layer.
+    post_spn = relupc.basis @ weights
+    post_center = relupc.center @ weights + bias
+    
+    # Optimise span to basisl
+    _, s, v = svd(post_spn, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
+    rnk = np.amax(np.where(np.absolute(s) >= FLOAT_ATOL)) + 1
+    post_basis = v[:rnk, :]                             # Trim u to get basis
+    
+    return LinearPostcond(post_basis, post_center)
+    
+
 
 
 
@@ -161,14 +192,16 @@ if __name__ == '__main__':
 
     k = 200
     n = 200
-    invar = 10
+    n_ = 120
     cenvar = 10
+    biavar = 10
     p0 = random.random() * 0.1
+    p1 = random.random() * 0.15
     n_run = 1000
     
     t = 0
 
-    basis, center = None, None
+    basis, center, weights, bias = None, None, None, None
     
     def fail_dump():
         global n, k, basis, center, tc1, tc2
@@ -176,19 +209,23 @@ if __name__ == '__main__':
         data = {}
         data['basis'] = basis.tolist()
         data['center'] = center.tolist()
+        data['weights'] = weights.tolist()
+        data['bias'] = bias.tolist()
         with open(sys.argv[1], 'w') as log:
             log.write(str(data))
         
     def run_pf():
         global tc1, basis, center
         print("Running bound based push forward")
-        push_forward_postcond_relu(LinearPostcond(basis, center))
+        push_forward_postcond(LinearPostcond(basis, center), weights, bias)
     
     if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
         with open(sys.argv[1]) as log:
             data = eval(log.read())
             basis = np.array(data['basis'])
             center = np.array(data['center'])
+            weights = np.array(data['weights'])
+            bias = np.array(data['bias'])
             
             print("Running pushforward")
             try:
@@ -214,6 +251,17 @@ if __name__ == '__main__':
         basis[pos_idx] -= 1-p0
         basis[pos_idx] /= 1-p0
         center = (np.random.rand(n) - 0.5) * cenvar
+        
+        weights = np.random.rand(n,n_)
+        neg_idx = np.where(weights < p0)
+        zer_idx = np.where(np.logical_and(weights >= p0, weights <= (1-p0)))
+        pos_idx = np.where(weights > 1-p0)
+        weights[neg_idx] -= p0
+        weights[neg_idx] /= p0
+        weights[zer_idx] *= 0
+        weights[pos_idx] -= 1-p0
+        weights[pos_idx] /= 1-p0
+        bias = (np.random.rand(n_) - 0.5) * biavar
         
         print("Running pushforward")
         try:
