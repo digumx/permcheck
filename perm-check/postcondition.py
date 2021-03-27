@@ -214,6 +214,9 @@ if __name__ == '__main__':
     from timeit import timeit
     import random
     import sys
+    
+    from debug import rand_sparce_matrix
+    
 
     k = 200
     n = 200
@@ -266,26 +269,10 @@ if __name__ == '__main__':
         print(f"Run {i} of {n_run}")
 
         print("Generating data")
-        basis = np.random.rand(k,n)
-        neg_idx = np.where(basis < p0)
-        zer_idx = np.where(np.logical_and(basis >= p0, basis <= (1-p0)))
-        pos_idx = np.where(basis > 1-p0)
-        basis[neg_idx] -= p0
-        basis[neg_idx] /= p0
-        basis[zer_idx] *= 0
-        basis[pos_idx] -= 1-p0
-        basis[pos_idx] /= 1-p0
+        basis = rand_sparce_matrix(k,n,p0)
         center = (np.random.rand(n) - 0.5) * cenvar
         
-        weights = np.random.rand(n,n_)
-        neg_idx = np.where(weights < p0)
-        zer_idx = np.where(np.logical_and(weights >= p0, weights <= (1-p0)))
-        pos_idx = np.where(weights > 1-p0)
-        weights[neg_idx] -= p0
-        weights[neg_idx] /= p0
-        weights[zer_idx] *= 0
-        weights[pos_idx] -= 1-p0
-        weights[pos_idx] /= 1-p0
+        weights = rand_sparce_matrix(n,n_,p0)
         bias = (np.random.rand(n_) - 0.5) * biavar
         
         print("Running pushforward")

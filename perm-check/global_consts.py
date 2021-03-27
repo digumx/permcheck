@@ -52,7 +52,7 @@ SCIPY_SVD_METHOD = ScipySVDMethod.GESDD.value
 Numerical constants, for checking closeness of floating point numbers. Two floats a and b are
 considered 'close' if |b - a| < abs(b) * FLOAT_RTOL + FLOAT_ATOL. The values used in numpy are given
 at: https://numpy.org/doc/stable/reference/generated/numpy.allclose.html, these may be good values
-"""
+""" # TODO scrutinize use
 FLOAT_RTOL = 1e-5
 FLOAT_ATOL = 1e-8
 
