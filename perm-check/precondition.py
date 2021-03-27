@@ -267,9 +267,9 @@ def pull_back_precond(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayL
         bs.append(r[1])
     
     # Pull both back across linear transform
-    for m, b in zip(ms, bs):
-        b -= basis @ m
-        m = weights @ m
+    for i in range(len(ms)):
+        bs[i] -= biases @ ms[i]
+        ms[i] = weights @ ms[i]
     
     # Pull back over relu and return
     return pull_back_constr_relu(ms, bs, point, axtols = axtols)
@@ -277,49 +277,79 @@ def pull_back_precond(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayL
 
 if __name__ == "__main__":  #DEBUG
     
-    #m = np.array([  
-    #                [ 0,  0],
-    #                [ 1, -1],
-    #                [ 2, -2],
-    #                [ 3, -3],
-    #                [-4,  4],
-    #                [ 5, -5]
-    #            ])
-    #b = np.array([2, -1])
-    ##m = np.array([  
-    ##                [ 0],
-    ##                [ 1],
-    ##                [ 2],
-    ##                [ 3],
-    ##                [-4],
-    ##                [ 5]
-    ##            ])
-    ##b = np.array([2])
-    #quad = np.array([1, 2, 3])
-    #
-    ##pc = DisLinearPrecond(m, b, neg_side_type = NegSideType.QUAD, neg_side_quad = quad)
-    ##pc = pull_back_constr_relu([m], [b], np.array([1.5/7, 1.5/7, 1.5/7, 1.5/7, 1.5/7, 1.5/7]))
-    ##pc = pull_back_constr_relu([m], [b], np.array([0, 0.5, 0.5, 0, 0, 0]))
-    ##pc = pull_back_constr_relu([m], [b], np.array([-1, -1, 0, 0.1, 0, 0]))
-    #pc = pull_back_constr_relu([m], [b], np.array([-10, 0.5, 0.5, -10, -10, -10]))
-    #
-    #print(repr(pc))
-    #
-    ##m, b = pc.get_pos_constrs()
-    ##print("Positive side")
-    ##print(m)
-    ##print(b)
-    ##
-    ##r = pc.get_neg_constrs()
-    ##if r is not None:
-    ##    m, b = r
-    ##    print("Negative side")
-    ##    print(m)
-    ##    print(b)
-    ##else:
-    ##    print("No negative side")
-    #
+    from timeit import timeit
+    import random
+    import sys
     
-    n = 200     # Number of neurons in previous layer
-    m = 160     # Number of neurons in current layer
-    k = 300     # Number of equations in postcond.
+    from debug import rand_sparce_matrix
+    
+
+    n = 200         # Number of neurons in prev layer
+    m = 160         # " "               in current layer
+    k = 300         # Number of equations in postcond
+    poivar = 10     # Range of values for the center point
+    biavar = 10     # Range of bias values
+    p0 = random.random() * 0.1
+    p1 = random.random() * 0.15
+    n_run = 1000
+    
+    t = 0
+
+    mat, bnd, pt, weights, bias = None, None, None, None, None
+    
+    def fail_dump():
+        global n, k, basis, center, tc1, tc2
+        # Dump basis, center and tie classes found to log if methods do not match.
+        data = {}
+        data['weights'] = weights.tolist()
+        data['bias'] = bias.tolist()
+        data['mat'] = mat.tolist()
+        data['bnd'] = bnd.tolist()
+        data['pt'] = pt.tolist()
+        with open(sys.argv[1], 'w') as log:
+            log.write(str(data))
+        
+    def run_pb():
+        global mat, bnd, pt, weights, bias
+        print("Running pullback")
+        pull_back_precond(DisLinearPrecond(mat, bnd), weights, bias, pt)
+    
+    if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
+        with open(sys.argv[1]) as log:
+            data = eval(log.read())
+            weights = np.array(data['weights'])
+            bias = np.array(data['bias'])
+            mat = np.array(data['mat'])
+            bnd = np.array(data['bnd'])
+            pt = np.array(data['pt'])
+            
+            print("Running pullback")
+            try:
+                t += timeit(run_pb, number=1)
+            except Exception as e:
+                fail_dump()
+                raise e
+            
+            exit()
+            
+    
+    for i in range(n_run):
+        print(f"Run {i} of {n_run}")
+
+        print("Generating data")
+        mat = rand_sparce_matrix(m,k,2*p0)
+        pt = (np.random.rand(n) - 0.5) * poivar
+        weights = rand_sparce_matrix(n,m,p0)
+        bias = (np.random.rand(m) - 0.5) * biavar
+        bnd = (pt @ weights + bias) @ mat + 1
+        
+        print("Running pullback")
+        try:
+            t += timeit(run_pb, number=1)
+        except Exception as e:
+            fail_dump()
+            raise e
+
+    t /= n_run
+    print(f"The average time for pullback is {t}")
+    print(f"The layer went from {n} to {m} neurons and the right precondition had {k} constraints")

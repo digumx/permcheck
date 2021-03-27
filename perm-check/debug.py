@@ -2,7 +2,9 @@
 Debugging utilities
 """
 
-mport numpy as np
+import numpy as np
+from numpy.typing import ArrayLike
+
 
 def rand_sparce_matrix(n: int, m: int, p0: float) -> ArrayLike:
     """
