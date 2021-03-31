@@ -1,8 +1,4 @@
-*.vim*
-*tag*
-*build*
-*out*
-*cache*
-*catche*
-*data*
-*log*
+*.log*
+**/log
+**/__pycache__
+*dataset*
