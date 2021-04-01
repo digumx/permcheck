@@ -11,7 +11,7 @@ from scipy.optimize import linprog
 from scipy.linalg import svd
 
 from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL, REDUCE_POSTCOND_BASIS
-
+from utils import check_parallel
 
 
 class LinearPostcond:
@@ -24,6 +24,8 @@ class LinearPostcond:
     Members
 
     basis       -   The M.
+    perp_basis  -   A matrix whose rows form a basis for the space perpendicular to the row rank of
+                    `self.basis`, if not None
     center      -   The c.
     packed_mat  -   A matrix where the first k rows give M, and last gives c. This packed
                     representation is used to prevent copies and improve performance.
@@ -31,11 +33,13 @@ class LinearPostcond:
     num_neuron  -   The number of neurons this condition is over, that is, the dimensionality of c.    
     """
     
-    def __init__(self, *args):
+    def __init__(self, *args, perp_basis = None):
         """
         Construct a new `LinearPostcond`. If one argument is given, it is assumed to be the packed
         matrix representing the postcondition. Else, two arguments are expected, first being a matrix
-        where each vector is a basis, and the other being the vector c.
+        where each vector is a basis, and the other being the vector c. Optionally, a third keyword
+        argument `perp_basis` may be provided. If provided, it must be a matrix whose rows form the
+        basis of the space perpendicular to the row span of the first matrix given.
         """
     
         if len(args) == 1:
@@ -56,6 +60,10 @@ class LinearPostcond:
             
         self.basis : ArrayLike = self.packed_mat[:-1, :]
         self.center : ArrayLike = self.packed_mat[-1, :]
+        
+        # Fill in the perpendicular space
+        self.perp_basis = perp_basis
+        
 
 
 def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
@@ -72,20 +80,22 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     u, s, v = svd(bss, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
     
     # Find the rank of bss
-    rnk = rnk if rnk is not None else np.amax(np.where(np.absolute(s) >= FLOAT_ATOL))+1
+    cnum = FLOAT_ATOL * np.max(s)
+    rnk = rnk if rnk is not None else np.amax(np.where(s >= cnum))+1
     u = u[:, :rnk]                          # Trim u, s, v.
     s = s[:rnk]
+    p = v[rnk:, :]
     v = v[:rnk, :]
     b = np.sum(np.absolute(u*s), axis=0)    # New bounds
     
-    return v / b[:, np.newaxis]
+    return v / b[:, np.newaxis], p
 
     
 
-def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
+def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, ArrayLike]:
     """
-    Pushes forward a `LinearPostcond` across a relu via tie class analysis. Returns the
-    `LinearPostcond` to the right side of the relu.
+    Pushes forward a `LinearPostcond` across a relu via tie class analysis. Returns the pair (basis,
+    center) for the postcondition on the right side of the relu
     """
 
     # First, we use tie class analysis to build a list of basis vectors for each class.
@@ -129,8 +139,7 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
                     rnk_1 = False           # Then we cannot argue that class of i must have 1 basis
                     tc.append(j)
                 # Else, check if joint system is one dimensional
-                elif np.allclose( np.inner(i_vec, j_vec), np.linalg.norm(i_vec) * np.linalg.norm(j_vec),
-                                    rtol = FLOAT_RTOL, atol = FLOAT_ATOL ):
+                elif np.all( check_parallel(i_vec, j_vec) ):
                     tc.append(j)
                 # Else, cannot be in same tie classes, look at it again in the future
                 else:
@@ -146,18 +155,10 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
                 out_list.append((tc, v, n_basis, n_basis+1))
                 n_basis += 1
             
-            # Else reduce basis
-            elif REDUCE_POSTCOND_BASIS: 
-                out_b = optimize_postcond_basis(left_cond.basis[:,tc], rnk = 1 if rnk_1 else None)
-                rnk = out_b.shape[0]
-                # Add in required info to list of stuff
-                out_list.append((tc, out_b, n_basis, n_basis+rnk))
-                n_basis += rnk
-            
             # Else just add the generating vectors in
             else:
                 tcg = left_cond.basis[:,tc]
-                rnk = len(tc)
+                rnk = tcg.shape[0]
                 out_list.append((tc, tcg, n_basis, n_basis+rnk))
                 n_basis += rnk
                
@@ -173,7 +174,7 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> List[ArrayLike]:
     center = np.copy(left_cond.center)
     center[np.where(left_cond.center < 0)] = 0
     
-    return LinearPostcond(basis, center)
+    return basis, center
 
 
 def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: ArrayLike) \
@@ -189,16 +190,16 @@ def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: Array
     """
     
     # Push forward across relu
-    relupc = push_forward_postcond_relu(postc)
+    basis, center = push_forward_postcond_relu(postc)
     
     # Push forward across linear layer.
-    post_spn = relupc.basis @ weights
-    post_center = relupc.center @ weights + bias
+    post_spn = basis @ weights
+    post_center = center @ weights + bias
     
     # Optimise span to basis
     if REDUCE_POSTCOND_BASIS:
-        post_basis = optimize_postcond_basis(post_spn)
-        return LinearPostcond(post_basis, post_center)
+        post_basis, perp_basis = optimize_postcond_basis(post_spn)
+        return LinearPostcond(post_basis, post_center, perp_basis = perp_basis)
     
     # Or just return as is
     return LinearPostcond(post_spn, post_center)    
