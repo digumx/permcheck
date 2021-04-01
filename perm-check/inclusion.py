@@ -16,20 +16,23 @@ from precondition import DisLinearPrecond, NegSideType
 from global_consts import REDUCE_POSTCOND_BASIS, FLOAT_RTOL, FLOAT_ATOL, SCIPY_LINPROG_METHOD
 from utils import check_parallel
 
+MbFloat = Union[ None, float ]
 
-def check_lp_inclusion(inner_ub_a: ArrayLike, inner_ub_b: ArrayLike, inner_eq_a: ArrayLike,
-                        inner_eq_b: ArrayLike, outer_ub_a: ArrayLike, outer_ub_b: ArrayLike, 
-                        inner_bounds: Union[ list[ tuple[ float, float ] ], tuple[ float, float] ], 
-                        n_cex: int, s_cex: set[ArrayLike]) -> None:
+def check_lp_inclusion(inner_ub_a: ArrayLike, inner_ub_b: ArrayLike, 
+                        inner_eq_a: ArrayLike, inner_eq_b: ArrayLike, 
+                        outer_ub_a: ArrayLike, outer_ub_b: ArrayLike, 
+                        inner_bounds: Union[ list[ tuple[ MbFloat, MbFloat ] ], tuple[ MbFloat, MbFloat ]], 
+                        n_cex: int, l_cex: list[ArrayLike]) -> None:
     """
     Checks weather the region { x : inner_ub_a @ x <= inner_ub_b, inner_eq_a @ x == inner_eq_b ,
     bounds[0] <= x <= bounds[1]} is contained within the region { x : outer_ub_a @ x <= outer_ub_b }
-    via a number of linear program calls. Adds counterexamples found to `s_cex`, until the size of
-    `s_cex` reaches `n_cex`, at which point it returns.
+    via a number of linear program calls. Adds counterexamples found to `l_cex`, until the size of
+    `l_cex` reaches `n_cex`, at which point it returns.
     """
     
     # Loop over all outer constraints, optimize for max value.
     for c, b in zip(outer_ub_a, outer_ub_b):
+        
         res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
                 method = SCIPY_LINPROG_METHOD)      # Call optimizer
         
@@ -37,9 +40,9 @@ def check_lp_inclusion(inner_ub_a: ArrayLike, inner_ub_b: ArrayLike, inner_eq_a:
             return []
         
         elif res.status == 0:
-            if -res.fun > b[0]:    # Out of bounds, found cex
-                s_cex.add(res.x)
-                if len(lcex) >= n_cex:
+            if -res.fun > b:    # Out of bounds, found cex
+                l_cex.append(res.x)
+                if len(l_cex) >= n_cex:
                     break
         
         else:
@@ -47,61 +50,72 @@ def check_lp_inclusion(inner_ub_a: ArrayLike, inner_ub_b: ArrayLike, inner_eq_a:
         
 
 
-def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1)
+def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1) \
                     -> list[ArrayLike]:
     """
     Check if given postcondition `postc` is included within the precondition `prec`. Returns a list
     of upto `n_cex` counterxamples with no repetitions, or an empty list if inclusion is satisified.
+    Note returned list may contain duplicate elements.
     """
     assert postc.num_neuron == prec.num_neuron
-    
+   
+    lcex = []
+   
     # Get the LP for the postcondition. This works only if the postcondition has orthogonal bases
     assert REDUCE_POSTCOND_BASIS    #TODO implement other case
     
-    lcex = set()
-    
     # Calculate the bounds.
-    ub_a = np.concatenate( (postc.basis, -postc.basis), dim=0 )
+    ub_a = np.concatenate( (postc.basis, -postc.basis), axis=0 )
     t1 = postc.basis @ postc.center
     t2 = np.einsum("...i,...i->...", postc.basis, postc.basis)
-    ub_b = np.concatenate( (t2 + t1, t2 - t1), dim=0 )
+    ub_b = np.concatenate( (t2 + t1, t2 - t1), axis=0 )
+    
     
     # Equality should say that all components perpendicular to basis should have same value as
     # center
     if postc.perp_basis is not None:
-        eq_a = post.perp_basis
+        eq_a = postc.perp_basis
     else:
-        pb = np.transpose( null_space(post.basis, rcond=FLOAT_RTOL) )
+        eq_a = np.transpose( null_space(postc.basis, rcond=FLOAT_RTOL) )
     eq_b = eq_a @ postc.center
         
     # Check if postcondition is entirely within the positive region, or entirely negative.
-    axvar = np.sum( np.absolute( postc.basis ), dim = 0 )[0]    # Ub - Lb per axis
-    axub = postc.center + axvar                                 # Upper bounds per axis
-    axlb = postc.center - axvar                                 # Lower bounds per axis
+    axvar = np.sum( np.absolute( postc.basis ), axis = 0 )  # Ub - Lb per axis
+    axub = postc.center + axvar                             # Upper bounds per axis
+    axlb = postc.center - axvar                             # Lower bounds per axis
     postc_all_pos = np.all( axlb >= 0 )
     postc_any_pos = np.any( axlb >= 0 )
+    
+    print(axlb, axub, axvar) #DEBUG
     
     # Get counterexamples from inclusion failure in the positive region
     if postc_any_pos:
         bounds = (0, None)
-        check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.pos_m, prec.pos_b, bounds, n_cex, lcex)
+        print(" Checking positive side inclusion")
+        check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.pos_m.T, prec.pos_b, bounds, n_cex, lcex)
+        print(lcex)     #DEBUG
         
     # Exit if enough cex found, or if postc is entirely positive
     if postc_all_pos or len(lcex) >= n_cex:
-        return list(lcex)
+        print("Postcondition is entirely in positive domain") #DEBUG
+        return lcex
            
     # If prec does not cover any negative side, then look for negative side points in postc
     if prec.neg_side_type == NegSideType.NONE:
-        for _, i in zip(np.where(axlb < 0)):
+        print("No negative side behavior for postcondition") #DEBUG
+        for i in np.where(axlb < 0)[0]:
         
             # Build alpha and add cex
             alpha = np.ones(postc.reg_dim)
             alpha[ np.where(postc.basis[:,i] > 0) ] = -1
-            lcex.add( alpha @ postc.basis + postc.center )
+            print( "Positive side violation" )#DEBUG
+            lcex.append( alpha @ postc.basis + postc.center )
+            print(lcex)#DEBUG
+            assert np.any(lcex[-1] < 0) #TODO remove DEBUG(?)
             if len(lcex) >= n_cex:
-                return list(lcex)
+                return lcex
         
-        return list(lcex)
+        return lcex
     
     # Else for QUAD, check if all postc points in the negative side belong to right quadrant
     elif prec.neg_side_type == NegSideType.QUAD:
@@ -115,16 +129,16 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
             pll = check_parallel(postc.basis[:, prec.neg_side_quad], postc.center[prec.neg_side_quad])
             for i in np.where(not pll):
                 alhpa =  - np.inner(postc.center, qperp) / np.inner(postc.basis[i, :], qperp)
-                lcex.add( alpha * postc.basis[i, :] + postc.center )
+                lcex.append( alpha * postc.basis[i, :] + postc.center )
                 if len(lcex) > n_cex:
-                    return list(lcex)
+                    return lcex
             
         # Otherwise, check inclusion within the negative side region
         bounds = [ ( (None, 0) if i in prec.neg_side_quad else (0, None) )
                                 for i in range(postc.num_neuron) ]
-        check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.neg_m, prec.neg_b, bounds, n_cex, lcex)
+        check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.neg_m.T, prec.neg_b, bounds, n_cex, lcex)
         if len(lcex) >= n_cex:
-            return list(lcex)
+            return lcex
         
     
     # Finally, deal with the case when the negative side is around zero.     
@@ -147,9 +161,10 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
             
             # Check if point is all positive, if so add as cex.
             if np.any( x < 0 ):
-                lcex.add(x)
+                print(f"Found ZERO cex via bounds: {x}") #DEBUG
+                lcex.append(x)
                 if len(lcex) >= n_cex:
-                    return list(lcex)
+                    return lcex
                 continue
             
             # Else, save for later
@@ -167,10 +182,49 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
             bounds = [ (None, 0 if j == i else None) for j in range(prec.num_neuron) ]
             check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, blp_a, blp_b, bounds, n_cex, lcex)
             if len(lcex) >= n_cex:
-                return list(lcex)
+                return lcex
             
     else:
         raise ValueError("Precondition has unknown negative side type {0}".format(
                                 prec.neg_side_type))
         
-    return list(lcex)
+    return lcex
+
+
+if __name__ == "__main__":
+    
+    #ia = np.array([ [1, 0, 0],
+    #                [0, 1, 0],
+    #                [0, 0, 1]])
+    #ib = np.array([1, 1, 1])
+    #
+    #oa = np.array([ [1, 0, 0],
+    #                [0, 1, 0],
+    #                [0, 0, 1]])
+    #ob = np.array([2, 2, 2])
+    
+    #ia = np.array([ [ 1,  0,  0],
+    #                [ 0,  1,  0],
+    #                [ 0,  0,  1],
+    #                [-1,  0,  0],
+    #                [ 0, -1,  0],
+    #                [ 0,  0, -1]])
+    #ib = np.array([1, 1, 1, 1, 1, 1])
+    #
+    #oa = np.array([ [ 1,  1,  1],
+    #                [ 1,  1, -1],
+    #                [ 1, -1,  1],
+    #                [ 1, -1, -1],
+    #                [-1,  1,  1],
+    #                [-1,  1, -1],
+    #                [-1, -1,  1],
+    #                [-1, -1, -1]])
+    #ob = np.array([2, 2, 2, 2, 2, 2, 2, 2])
+    #
+    #cex = []
+    #check_lp_inclusion(ia, ib, None, None, oa, ob, (0, None), 100, cex)
+    #print(cex)
+    
+    prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.ZERO)
+    postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -1, -1]))
+    print(check_inclusion(postc, prec, n_cex = 100))
