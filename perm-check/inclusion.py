@@ -127,9 +127,13 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
         # Use linearity to check if postc has points outside iehter quadrant, add those as cex
         if postc_any_pos:
             pll = check_parallel(postc.basis[:, prec.neg_side_quad], postc.center[prec.neg_side_quad])
-            for i in np.where(not pll):
-                alhpa =  - np.inner(postc.center, qperp) / np.inner(postc.basis[i, :], qperp)
+            print(f"pll {pll}", postc.basis[:, prec.neg_side_quad], postc.center[prec.neg_side_quad]) #DEBUG
+            print("idxl", np.logical_not( pll ), np.where( np.logical_not( pll )))
+            for i in np.where( np.logical_not( pll ))[0]:
+                alpha =  - np.inner(postc.center, qperp) / np.inner(postc.basis[i, :], qperp)
+                print(i, alpha, postc.basis[i, :], postc.center)
                 lcex.append( alpha * postc.basis[i, :] + postc.center )
+                print(f"Not here nor there: {lcex[-1]}") #DEBUG
                 if len(lcex) > n_cex:
                     return lcex
             
@@ -225,6 +229,9 @@ if __name__ == "__main__":
     #check_lp_inclusion(ia, ib, None, None, oa, ob, (0, None), 100, cex)
     #print(cex)
     
-    prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.ZERO)
+    #prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
+    #                                        neg_side_type = NegSideType.QUAD,
+    #                                        neg_side_quad = [1, 2])
+    prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.ZERO) 
     postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -1, -1]))
     print(check_inclusion(postc, prec, n_cex = 100))
