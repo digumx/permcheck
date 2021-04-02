@@ -31,13 +31,17 @@ def check_lp_inclusion(inner_ub_a: ArrayLike, inner_ub_b: ArrayLike,
     """
     
     # Loop over all outer constraints, optimize for max value.
+    i = 0 #DEBUG
     for c, b in zip(outer_ub_a, outer_ub_b):
+        print(f"Checked constraint {i} of {len(outer_ub_a)}, found {len(l_cex)} cexes")
+        i += 1
         
         res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
                 method = SCIPY_LINPROG_METHOD)      # Call optimizer
         
         if res.status == 2:    # Inner is infeasable
-            return []
+            print("Infeasable inner") #DEBUG
+            return
         
         elif res.status == 0:
             if -res.fun > b:    # Out of bounds, found cex
@@ -47,7 +51,8 @@ def check_lp_inclusion(inner_ub_a: ArrayLike, inner_ub_b: ArrayLike,
         
         else:
             raise RuntimeError("Optimizer returned bad status: {0}".format(res.status))
-        
+    
+    print(f"Lp check leaves with {len(l_cex)} cexes")
 
 
 def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1) \
@@ -84,15 +89,12 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
     axub = postc.center + axvar                             # Upper bounds per axis
     axlb = postc.center - axvar                             # Lower bounds per axis
     postc_all_pos = np.all( axlb >= 0 )
-    postc_any_pos = np.any( axlb >= 0 )
     
     
     # Get counterexamples from inclusion failure in the positive region
-    if postc_any_pos:
-        bounds = (0, None)
-        print(" Checking positive side inclusion")
-        check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.pos_m.T, prec.pos_b, bounds, n_cex, lcex)
-        print(lcex)     #DEBUG
+    bounds = (0, None)
+    print("Checking positive side inclusion") #DEBUG
+    check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.pos_m.T, prec.pos_b, bounds, n_cex, lcex)
         
     # Exit if enough cex found, or if postc is entirely positive
     if postc_all_pos or len(lcex) >= n_cex:
@@ -109,7 +111,6 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
             alpha[ np.where(postc.basis[:,i] > 0) ] = -1
             print( "Positive side violation" )#DEBUG
             lcex.append( alpha @ postc.basis + postc.center )
-            print(lcex)#DEBUG
             assert np.any(lcex[-1] < 0) #TODO remove DEBUG(?)
             if len(lcex) >= n_cex:
                 return lcex
@@ -133,6 +134,7 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
     ns_m, ns_b = prec.get_neg_constrs()
     
     # Get the cexes
+    print("Looking for negative side cexes") #DEBUG
     check_lp_inclusion(nub_a, nub_b, eq_a, eq_b, ns_m.T, ns_b, (None, None), n_cex, lcex)
         
     return lcex
@@ -174,8 +176,116 @@ if __name__ == "__main__":
     
     #prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.ZERO)
     #postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([0.9, 0, 0]))
-    prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
-                                            neg_side_type = NegSideType.QUAD,
-                                            neg_side_quad = [1, 2])
-    postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -0.9, -0.9]))
-    print(check_inclusion(postc, prec, n_cex = 100))
+    #prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
+    #                                        neg_side_type = NegSideType.QUAD,
+    #                                        neg_side_quad = [1, 2])
+    #postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -0.9, -0.9]))
+    #print(check_inclusion(postc, prec, n_cex = 100))
+    
+    from timeit import timeit
+    import random
+    import sys
+    
+    from scipy.stats import ortho_group
+    
+    from debug import rand_sparce_matrix, rand_sparce_pos_matrix
+    
+    
+    n = 150         # Number of neurons
+    k1 = 100         # Number of postcond bases
+    k2 = 80         # Number of precond constriants
+    cenvar = 10     # Range of values for postcond center
+    basvar = 10     # Range of basis vector lengths
+    bndvar = 10     # Range of values of precond bounds
+    p0 = random.random() * 0.1      # Sparcity of postcond basis
+    p1 = random.random() * 0.15     # Sparcity of precondn bounds
+    n_run = 100
+    n_cex = 5
+    
+    t = 0
+
+    pre_m, pre_b, pst_v, pst_c, nsq, prec, postc = None, None, None, None, None, None, None
+    nst = None
+    
+    def fail_dump():
+        global pre_m, pst_v, pre_b, pst_c, nst, nsq
+        # Dump basis, center and tie classes found to log if methods do not match.
+        data = {}
+        data['pre_m'] = pre_m.tolist()
+        data['pre_b'] = pre_b.tolist()
+        data['pst_v'] = pst_v.tolist()
+        data['pst_c'] = pst_c.tolist()
+        data['nst'] = nst
+        data['nsq'] = nsq.tolist() if nsq is not None else nsq
+        with open(sys.argv[1], 'w') as log:
+            log.write(str(data))
+        
+    def run_pb():
+        global prec, postc
+        print("Running pullback")
+        ret = check_inclusion(postc, prec, n_cex=n_cex)
+    
+    if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
+        with open(sys.argv[1]) as log:
+            data = eval(log.read())
+            pre_m = np.array(data['pre_m'])
+            pre_b = np.array(data['pre_b'])
+            pst_v = np.array(data['pst_v'])
+            pst_c = np.array(data['pst_c'])
+            nst = data['nst']
+            nsq = np.array(data['nsq'])
+            
+            nst = random.random()
+            if nst <= 0.333:
+                prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.NONE)
+            elif nst > 0.333 and nst <= 0.666 and np.all( pre_b >= 0 ):
+                prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.ZERO)
+            else:
+                prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.QUAD, 
+                                        neg_side_quad = np.where( nsq < 0.5) )
+                
+            postc = LinearPostcond(pst_v, pst_c)
+            
+            print("Running inclusion check")
+            try:
+                t += timeit(run_pb, number=1)
+            except Exception as e:
+                fail_dump()
+                raise e
+            
+            exit()
+            
+    
+    for i in range(n_run):
+        print(f"Run {i} of {n_run}")
+
+        print("Generating data")
+        pre_m = rand_sparce_matrix(n,k1,p1)
+        pst_v = ortho_group.rvs(n)[:k2, :] * basvar
+        pre_b = (np.random.randn(k1) - 0.5) * bndvar
+        pst_c = (rand_sparce_matrix(1,n,p0)[0,:] - 0.5) * cenvar
+        
+        nst = random.random()
+        if nst <= 0.333:
+            prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.NONE)
+            print("NONE postcond")
+        elif nst > 0.333 and nst <= 0.666 and np.all( pre_b >= 0 ):
+            prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.ZERO)
+            print("ZERO postcond")
+        else:
+            nsq = np.random.randn(n)
+            prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.QUAD, 
+                                    neg_side_quad = np.where( nsq < 0.5) )
+            print("QUAD postcond")
+            
+        postc = LinearPostcond(pst_v, pst_c)
+        
+        print("Running inclusion check")
+        try:
+            t += timeit(run_pb, number=1)
+        except Exception as e:
+            fail_dump()
+            raise e
+
+    t /= n_run
+    print(f"The average time for inclusion check is {t}")
