@@ -86,7 +86,6 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
     postc_all_pos = np.all( axlb >= 0 )
     postc_any_pos = np.any( axlb >= 0 )
     
-    print(axlb, axub, axvar) #DEBUG
     
     # Get counterexamples from inclusion failure in the positive region
     if postc_any_pos:
@@ -117,80 +116,24 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
         
         return lcex
     
-    # Else for QUAD, check if all postc points in the negative side belong to right quadrant
-    elif prec.neg_side_type == NegSideType.QUAD:
-    
-        # A vector representing a line through both quads
-        qperp = np.zeros(prec.num_neuron)               
-        qperp[ prec.neg_side_quad ] = 1 
-        
-        # Use linearity to check if postc has points outside iehter quadrant, add those as cex
-        if postc_any_pos:
-            pll = check_parallel(postc.basis[:, prec.neg_side_quad], postc.center[prec.neg_side_quad])
-            print(f"pll {pll}", postc.basis[:, prec.neg_side_quad], postc.center[prec.neg_side_quad]) #DEBUG
-            print("idxl", np.logical_not( pll ), np.where( np.logical_not( pll )))
-            for i in np.where( np.logical_not( pll ))[0]:
-                alpha =  - np.inner(postc.center, qperp) / np.inner(postc.basis[i, :], qperp)
-                print(i, alpha, postc.basis[i, :], postc.center)
-                lcex.append( alpha * postc.basis[i, :] + postc.center )
-                print(f"Not here nor there: {lcex[-1]}") #DEBUG
-                if len(lcex) > n_cex:
-                    return lcex
-            
-        # Otherwise, check inclusion within the negative side region
-        bounds = [ ( (None, 0) if i in prec.neg_side_quad else (0, None) )
-                                for i in range(postc.num_neuron) ]
-        check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, prec.neg_m.T, prec.neg_b, bounds, n_cex, lcex)
-        if len(lcex) >= n_cex:
-            return lcex
-        
-    
-    # Finally, deal with the case when the negative side is around zero.     
-    elif prec.neg_side_type == NegSideType.ZERO:
-        
-        rem_bnds = []
-        
-        # For each bound on the negative side, see if we can easily prove boundedness or find cex by
-        # checking if the bound is satisfied regardless of what side we are on
-        for b, i in zip(prec.zer_b, prec.zer_i):
-            
-            # Bound satisfied, move on
-            if axub[i] <= b:
-                continue
-                
-            # Find extremal point.
-            alpha = np.ones(postc.reg_dim)
-            alpha[ np.where(postc.basis[:,i] < 0) ] = -1
-            x = alpha @ postc.basis + postc.center
-            
-            # Check if point is all positive, if so add as cex.
-            if np.any( x < 0 ):
-                print(f"Found ZERO cex via bounds: {x}") #DEBUG
-                lcex.append(x)
-                if len(lcex) >= n_cex:
-                    return lcex
-                continue
-            
-            # Else, save for later
-            rem_bnds.append((b, i))
-        
-        # Construct lp for remaining bounds
-        blp_a = np.zeros(( len(rem_bnds), postc.num_neuron ))
-        blp_b = np.zeros( len(rem_bnds) )
-        for i, bnd in enumerate(rem_bnds):
-            blp_a[i, bnd[1]] = 1
-            blp_b[i] = bnd[0]
-        
-        # For each axis, use lp to add cexes
-        for i in range(prec.num_neuron):
-            bounds = [ (None, 0 if j == i else None) for j in range(prec.num_neuron) ]
-            check_lp_inclusion(ub_a, ub_b, eq_a, eq_b, blp_a, blp_b, bounds, n_cex, lcex)
-            if len(lcex) >= n_cex:
-                return lcex
-            
+    # Else, add the plane seperating the positive and negative side to postc constraints
+    nub_a = np.zeros(( ub_a.shape[0]+1, ub_a.shape[1] ))
+    nub_b = np.zeros( ub_b.shape[0] + 1 )
+    nub_a[:-1, :] = ub_a
+    nub_b[:-1] = ub_b
+    if prec.neg_side_type == NegSideType.QUAD:
+        nub_a[ -1, prec.neg_side_quad ] = 1
+        nub_b[-1] = 0
     else:
-        raise ValueError("Precondition has unknown negative side type {0}".format(
-                                prec.neg_side_type))
+        for b, i in zip(prec.zer_b, prec.zer_i):
+            nub_a[-1, i] = 1/b
+        nub_b[-1] = 1
+    
+    # Get the negative side constriants
+    ns_m, ns_b = prec.get_neg_constrs()
+    
+    # Get the cexes
+    check_lp_inclusion(nub_a, nub_b, eq_a, eq_b, ns_m.T, ns_b, (None, None), n_cex, lcex)
         
     return lcex
 
@@ -229,9 +172,10 @@ if __name__ == "__main__":
     #check_lp_inclusion(ia, ib, None, None, oa, ob, (0, None), 100, cex)
     #print(cex)
     
-    #prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
-    #                                        neg_side_type = NegSideType.QUAD,
-    #                                        neg_side_quad = [1, 2])
-    prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.ZERO) 
-    postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -1, -1]))
+    #prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.ZERO)
+    #postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([0.9, 0, 0]))
+    prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
+                                            neg_side_type = NegSideType.QUAD,
+                                            neg_side_quad = [1, 2])
+    postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -0.9, -0.9]))
     print(check_inclusion(postc, prec, n_cex = 100))

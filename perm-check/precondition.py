@@ -179,7 +179,7 @@ class DisLinearPrecond:
             
             s = -1 * np.ones(self.num_neuron)                                # Set up quadrant constraints
             s[self.neg_side_quad] = 1                               # And copy them
-            m[range(self.num_neuron), range(self.num_neg_m.shape[1], self.neg_m.shape[1] + self.num_neuron)] = s
+            m[range(self.num_neuron), range(self.neg_m.shape[1], self.neg_m.shape[1] + self.num_neuron)] = s
             
             m[:,:self.neg_m.shape[1]] = self.neg_m                  # Original constraints
             b[:self.neg_m.shape[1]] = self.neg_b                    # Original constraints, rest 0
