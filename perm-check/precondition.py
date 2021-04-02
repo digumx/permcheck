@@ -33,7 +33,7 @@ class DisLinearPrecond:
     
     Members:
     
-    n : int                     -   Dimensionality of space the precond is on.
+    num_neuron : int            -   Number of neurons
     pos_m, pos_b : ArrayLike    -   Specifies the positive side behavior as the linear region
                                     x @ pos_m <= pos_b                             
     neg_side_type : NegSideType -   What kind of condition exists in the negative side. Depending on
@@ -81,7 +81,7 @@ class DisLinearPrecond:
         assert pos_m.shape[1] == pos_b.shape[0]
         
         # Set up basic stuff
-        self.n : int = pos_m.shape[0]
+        self.num_neuron : int = pos_m.shape[0]
         self.pos_m : ArrayLike = pos_m
         self.pos_b : ArrayLike = pos_b
         self.neg_side_type : NegSideType = neg_side_type
@@ -126,7 +126,7 @@ class DisLinearPrecond:
         
         d['pos_m'] = self.pos_m.tolist()
         d['pos_b'] = self.pos_b.tolist()
-        d['n'] = self.n
+        d['n'] = self.num_neuron
         
         if self.neg_side_type == NegSideType.NONE:
             d['neg_side_type'] = 'NONE'
@@ -153,10 +153,10 @@ class DisLinearPrecond:
         {x : x * m <= b}. Note that these are not just `pos_m` and `pos_b`, as these do not enforce
         x to be within the all positive quadrant.
         """
-        m = np.zeros((self.n, self.pos_m.shape[1] + self.n))
-        b = np.zeros((self.pos_m.shape[1] + self.n))
+        m = np.zeros((self.num_neuron, self.pos_m.shape[1] + self.num_neuron))
+        b = np.zeros((self.pos_m.shape[1] + self.num_neuron))
         
-        m[range(self.n), range(self.pos_m.shape[1], self.pos_m.shape[1] + self.n)] = -1  # Set positivity
+        m[range(self.num_neuron), range(self.pos_m.shape[1], self.pos_m.shape[1] + self.num_neuron)] = -1  # Set positivity
         
         m[:,:self.pos_m.shape[1]] = self.pos_m                  # Original constraints
         b[:self.pos_m.shape[1]] = self.pos_b                    # Original constraints, rest 0
@@ -168,16 +168,18 @@ class DisLinearPrecond:
         Returns the complete set of constraints capturing the negative side behavior of the
         postcondition. Returns a pair `(m, b)`, so that the negative side region is given by
         {x : x * m <= b}, or `None` if no negative side behavior is present. Note that the returned
-        constraints enforce x to belong in the appropriate quadrant in the negative side.
+        constraints enforce x to belong in the appropriate quadrant in the negative side. Note that
+        returned constraints may be views into internal data, and modifying them may modify the
+        precondition.
         """
         if self.neg_side_type == NegSideType.QUAD:
             
-            m = np.zeros((self.n, self.neg_m.shape[1] + self.n))
-            b = np.zeros((self.neg_m.shape[1] + self.n))
+            m = np.zeros((self.num_neuron, self.neg_m.shape[1] + self.num_neuron))
+            b = np.zeros((self.neg_m.shape[1] + self.num_neuron))
             
-            s = -1 * np.ones(self.n)                                # Set up quadrant constraints
+            s = -1 * np.ones(self.num_neuron)                                # Set up quadrant constraints
             s[self.neg_side_quad] = 1                               # And copy them
-            m[range(self.n), range(self.neg_m.shape[1], self.neg_m.shape[1] + self.n)] = s
+            m[range(self.num_neuron), range(self.num_neg_m.shape[1], self.neg_m.shape[1] + self.num_neuron)] = s
             
             m[:,:self.neg_m.shape[1]] = self.neg_m                  # Original constraints
             b[:self.neg_m.shape[1]] = self.neg_b                    # Original constraints, rest 0
@@ -186,11 +188,10 @@ class DisLinearPrecond:
         
         elif self.neg_side_type == NegSideType.ZERO:
             
-            m = np.zeros(self.n, self.zer_i.shape[0])
-            b = np.zeros(self.zer_i.shape[0])
-            m[self.zer_i, range(self.zer_i.shape[0])]               # Set up diagonals
+            m = np.zeros(( self.num_neuron, self.zer_i.shape[0] ))
+            m[ self.zer_i, range(self.zer_i.shape[0]) ] = 1         # Set up diagonals
             
-            return m, b
+            return m, self.zer_b
         
         else:
             
@@ -253,7 +254,7 @@ def pull_back_precond(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayL
     assert weights.ndim == 2
     assert weights.shape[0] == point.shape[0]
     assert weights.shape[1] == biases.shape[0]
-    assert weights.shape[1] == prec.n
+    assert weights.shape[1] == prec.num_neuron
     
     # Extract the positive region region
     m, b = prec.get_pos_constrs()
@@ -281,7 +282,7 @@ if __name__ == "__main__":  #DEBUG
     import random
     import sys
     
-    from debug import rand_sparce_matrix
+    from debug import rand_sparce_matrix, rand_sparce_pos_matrix
     
 
     n = 200         # Number of neurons in prev layer
@@ -296,6 +297,10 @@ if __name__ == "__main__":  #DEBUG
     t = 0
 
     mat, bnd, pt, weights, bias = None, None, None, None, None
+    n_succ = 0
+    n_none = 0
+    n_zero = 0
+    n_quad = 0
     
     def fail_dump():
         global n, k, basis, center, tc1, tc2
@@ -310,9 +315,17 @@ if __name__ == "__main__":  #DEBUG
             log.write(str(data))
         
     def run_pb():
-        global mat, bnd, pt, weights, bias
+        global mat, bnd, pt, weights, bias, n_succ, n_none, n_zero, n_quad
         print("Running pullback")
-        pull_back_precond(DisLinearPrecond(mat, bnd), weights, bias, pt)
+        ret = pull_back_precond(DisLinearPrecond(mat, bnd), weights, bias, pt)
+        n_succ += len(ret)
+        for r in ret:
+            if r.neg_side_type == NegSideType.NONE:
+                n_none += 1
+            elif r.neg_side_type == NegSideType.ZERO:
+                n_zer += 1
+            elif r.neg_side_type == NegSideType.QUAD:
+                n_quad += 1
     
     if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
         with open(sys.argv[1]) as log:
@@ -339,9 +352,11 @@ if __name__ == "__main__":  #DEBUG
         print("Generating data")
         mat = rand_sparce_matrix(m,k,2*p0)
         pt = (np.random.rand(n) - 0.5) * poivar
-        weights = rand_sparce_matrix(n,m,p0)
+        weights = rand_sparce_pos_matrix(n,m,p0)
         bias = (np.random.rand(m) - 0.5) * biavar
-        bnd = (pt @ weights + bias) @ mat + 1
+        p_ = np.copy(pt)
+        p_[ np.where(p_ < 0) ] = 0
+        bnd = (p_ @ weights + bias) @ mat + 1
         
         print("Running pullback")
         try:
@@ -353,3 +368,4 @@ if __name__ == "__main__":  #DEBUG
     t /= n_run
     print(f"The average time for pullback is {t}")
     print(f"The layer went from {n} to {m} neurons and the right precondition had {k} constraints")
+    print(f"There were {n_succ} pullbacks, {n_none} NONE, {n_zero} ZERO, {n_quad} QUAD")
