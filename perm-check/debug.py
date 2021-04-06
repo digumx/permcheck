@@ -25,7 +25,7 @@ def rand_sparce_matrix(n: int, m: int, p0: float) -> ArrayLike:
     
 def rand_sparce_pos_matrix(n: int, m: int, p0: float) -> ArrayLike:
     """
-    Generate a random matrix mxn with elements between -1 and 1 and a lot of 0 elements. Lower values of
+    Generate a random matrix mxn with elements between 0 and 1 and a lot of 0 elements. Lower values of
     `p0` lead to more zeros.
     """
     mat = np.random.rand(n,m)
