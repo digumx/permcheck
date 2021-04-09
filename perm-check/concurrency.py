@@ -12,8 +12,9 @@ from time import monotonic
 from global_consts import USE_MP
 
 if USE_MP:
-    from multiprocessing import get_context, Queue, Event, Manager, current_process, Lock
-    from queue import Empty
+    from multiprocessing import get_context, current_process
+    from multiprocessing import Queue, JoinableQueue, Event, Manager, Lock
+    from queue import Empty, Full
 
 if USE_MP:
     from global_consts import MP_NUM_WORKER, MP_START_METHOD
@@ -21,23 +22,22 @@ if USE_MP:
 
 if USE_MP:
     
-    class ChildState:
+    class ChildEvent:
         """
-        A list of possible states a child process can be in.
+        A list of possible events a child process can pass on to the parent
         """
         EXIT    = 0             # The child has finished all work, and is ready to exit.
-        IDLE    = 1             # The child is idling, waiting for more work
-        BUZY    = 2             # The child is executing task
-        PUSH    = 3             # The child is waiting to push results to return queue
+        #IDLE    = 1             # The child is idling, waiting for more work
+        #BUZY    = 2             # The child is executing task
+        #PUSH    = 3             # The child is waiting to push results to return queue
         STRT    = 4             # The child has just been started
         
         
-    def _worker(kern : Callable[..., Any], tq : Queue, rq : Queue, state : ChildState, 
+    def _worker(kern : Callable[..., Any], tq : JoinableQueue, rq : Queue, eq: Queue, 
                 exit_ev : Event, rp : float, pl: Lock):
         """
         Keep extracting elements from tq, call kern on contents, push return to rq. Quit if the
-        exit_ev has been set. Just before quitting, send a QuitMessage. Writes the current state to
-        `state`.
+        exit_ev has been set. Just before quitting, send a QuitMessage. Uses `eq` as an event queue
         """
         # Set up reference point for logging
         global ref_point, print_lock
@@ -48,21 +48,15 @@ if USE_MP:
         
         has_ret = False
         ret = None
-        state = ChildState.IDLE
+        eq.put(ChildEvent.STRT)
         
         # Exit if set
         while not exit_ev.is_set():
             
-            #print("Loop entry") #DEBUG
-            
             if not has_ret:
                 # Get a task
                 try:
-                    #print("Requesting task")
                     tsk = tq.get_nowait()
-                    #print("Obtained task")
-                    state = ChildState.BUZY
-                    #print("Falg set")
                 except Empty:
                     continue
                 
@@ -70,20 +64,19 @@ if USE_MP:
                 
                 # Perform task:
                 ret = kern(tsk)
-                state = ChildState.PUSH
                 has_ret = True
             
             # Push return
             try:
                 rq.put_nowait(ret)
-                state = ChildState.IDLE
+                tq.task_done()
             except Full:
                 continue
             
             # Return has been pushed
             has_ret = False
         
-        state = ChildState.EXIT
+        eq.put(ChildEvent.EXIT)
         
             
 
@@ -101,10 +94,10 @@ workers have indices from 1 onwards.
 Managed globals:
 
     manager : Manager       -   A shared memory manager.
-    task_q : Queue          -   Queue for scheduled tasks
+    task_q : JoinableQueue  -   Queue for scheduled tasks
     retn_q : Queue          -   Queue for return messages
+    evnt_q : Queue          -   Queue for event messages
     exit_ev : Event         -   An Event that is fired to make all workers exit as soon as possible
-    states : [ChildState]   -   A list of states for each process, according to their index
     workers : [Process]     -   A list of worker Processes
     print_lock : Lock         -   A lock that must be acquired to print things
 
@@ -123,8 +116,8 @@ if USE_MP:
     manager = None
     task_q = None
     retn_q = None
+    evnt_q = None
     exit_ev = None
-    states = None
     workers = None
     print_lock = None
 
@@ -144,19 +137,19 @@ def init(k : Callable[..., Any],
     ref_point = monotonic()
     
     if USE_MP:
-        global manager, task_q, retn_q, exit_ev, states, workers, print_lock
+        global manager, task_q, retn_q, evnt_q, exit_ev, workers, print_lock
         
         ctx = get_context(method=start_method)
         manager = ctx.Manager()
-        task_q = ctx.Queue()
+        task_q = ctx.JoinableQueue()
         retn_q = ctx.Queue()
+        evnt_q = ctx.Queue()
         exit_ev = ctx.Event()
         print_lock = ctx.Lock()
         
-        states = manager.list([ ChildState.STRT for _ in range(n_workers + 1) ])
         
         workers = [ ctx.Process(    target = _worker, 
-                                    args = ( k, task_q, retn_q, states[i+1], exit_ev, ref_point,
+                                    args = (    k, task_q, retn_q, evnt_q, exit_ev, ref_point,
                                                 print_lock ),
                                     name = "WORKER {0}".format(i)
                                 ) for i in range(n_workers) ]
@@ -175,18 +168,17 @@ def start():
     if not USE_MP:
         return
     
-    global workers
+    global workers, evnt_q
     
+    # Start all workers
     for w in workers:
         w.start()
    
-    while True:
-        brk = True
-        log(str([ s for s in states[1:] ]))
-        for s in states[1:]:
-            if s != ChildState.IDLE:
-                brk = False
-        if brk: break
+    # Wait for them to message back start. No other messages expected at this point.
+    for _ in workers:
+        assert evnt_q.get() == ChildEvent.STRT
+            
+   
    
 def stop():
     """
@@ -197,13 +189,14 @@ def stop():
     if not USE_MP:
         return
     
-    global exit_ev, states, task_q, retn_q, workers
+    global exit_ev, evnt_q, task_q, retn_q, workers
     
     # Send stop message
     exit_ev.set()
     
-    # Wait for all processes to be in EXIT state
-    while not all(( s == ChildState.EXIT for s in states )): pass
+    # Wait for all processes to give EXIT message. This clears event queue
+    for _ in workers:
+        assert evnt_q.get() == ChildEvent.EXIT
     
     # Clear task queue.
     while True:
@@ -274,15 +267,8 @@ def wait_till_all_done():
     if not USE_MP:
         return
     
-    global states
-    
-    while True:
-        brk = True
-        log(str([ s for s in states[1:] ]))
-        for s in states[1:]:
-            if s != ChildState.IDLE:
-                brk = False
-        if brk: break
+    global task_q
+    task_q.join()
 
 
 def log(s : str):
@@ -322,14 +308,14 @@ if __name__ == "__main__":  #DEBUG
     log("Tasks added")
     start()
     log("Start complete")
-    
-    log("Getting results")
-    for _ in n_inpts:
-        res = get_return(wait=True)
-        log(res)
         
     log("Waiting till completion")
     wait_till_all_done()
+    
+    log("Getting results")
+    for _ in range(n_inpts):
+        res = get_return(wait=True)
+        log(res)
     
     log("Stopping")
     stop()
