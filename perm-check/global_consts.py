@@ -70,3 +70,27 @@ improves performance of future push forwards and inclusion checks, but introduce
 behavior and weakens the postcondition.
 """
 REDUCE_POSTCOND_BASIS = True
+
+
+
+
+"""
+Configuration for concurrency
+"""
+
+"""
+Should multiprocess based parallelism be used?
+"""
+USE_MP = True
+
+"""
+The method used to spawn the worker processes, if None, the default method or the one set globally
+by the parent process is used. Default is "spawn" for best portabitily and flexibility.
+"""
+MP_START_METHOD = "spawn"
+
+"""
+Number of workers to use. The actual number of processes will be more than this, but all the extra
+processes will be doing IO and organization, so should not hold up the CPU.
+"""
+MP_NUM_WORKER = 10
