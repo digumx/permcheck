@@ -44,6 +44,27 @@ class ScipySVDMethod(Enum):
 
 SCIPY_SVD_METHOD = ScipySVDMethod.GESDD.value
 
+class ScipyLstsqMethod(Enum):
+    """
+    The Lapack driver Scipy should use in least-squares
+    """
+    GELSD   = 'gelsd'       # A good choice
+    GELSY   = 'gelsy'       # May be faster for some problems
+    GELSS   = 'gelss'       # Legacy
+    
+SCIPY_LSTSQ_METHOD = ScipyLstsqMethod.GELSD.value
+
+class NumpySortMethod(Enum):
+    """
+    What method is used to sort arrays
+    """
+    QUICK   = 'quicksort'   # Fastest in terms of implementation, not complexity
+    MERGE   = 'mergesort'   # Better complexity, but slower, also legacy
+    HEAP    = 'heapsort'    # Same complexity as merge, but slower, according to docs
+    
+NUMPY_SORT_METHOD = NumpySortMethod.HEAP.value
+
+
 
 
 
@@ -59,9 +80,7 @@ FLOAT_ATOL = 1e-8
 
 
 
-"""
-Configuration relating to the push forward of postconditions.
-"""
+""" Configuration relating to the push forward of postconditions.  """
 
 """
 If set tu true, when postconditions are pushed forward, redundant generating vectors are discarded
@@ -70,3 +89,18 @@ improves performance of future push forwards and inclusion checks, but introduce
 behavior and weakens the postcondition.
 """
 REDUCE_POSTCOND_BASIS = True
+
+
+
+
+""" Configuration for the pullback of potential counterexamples """
+
+"""
+A multiplier for the number of random samples to pick from the space of alpha values.
+"""
+CEX_PULLBACK_SAMPLES_SCALE = 100
+
+"""
+The number of candidate pullbacks to return
+"""
+CEX_PULLBACK_NUM_PULLBACKS = 10
