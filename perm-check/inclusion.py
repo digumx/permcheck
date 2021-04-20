@@ -15,6 +15,7 @@ from postcondition import LinearPostcond
 from precondition import DisLinearPrecond, NegSideType
 from global_consts import REDUCE_POSTCOND_BASIS, FLOAT_RTOL, FLOAT_ATOL, SCIPY_LINPROG_METHOD
 from utils import check_parallel
+from concurrency import log
 
 
 MbFloat = Union[ None, float ]

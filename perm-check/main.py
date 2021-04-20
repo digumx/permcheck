@@ -99,14 +99,16 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
         log("Pulling back output LP across last layer, {0}, {1}".format(ms.shape, bs.shape)) 
         ret = pull_back_constr_relu([ms], [bs], centr)
         log("Pullback done")
+        log("Returning {0} from outlp".format(ret)) #DEBUG
         return ReturnMessage.PULL_B_DONE, layer, ret
     
     # Pull back precond over layer
     elif task_id == TaskMessage.PULL_BACK:
         prec, weights, biases, centr = args
         log("Pulling back over layer {0}".format(layer))
-        ret = pullback_cex(prec, weights, bias, centr)
+        ret = pullback_precond(prec, weights, bias, centr)
         log("Pullback done")
+        log("Returning {0}".format(ret)) #DEBUG
         return ReturnMessage.PULL_B_DONE, layer, ret
 
     # Inclusion check
@@ -196,6 +198,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     inp_b *= brn[np.newaxis, :]             # Scale to fill bounds
     postconds[0] = LinearPostcond(inp_b @ weights[0], cen @ weights[0] + biases[0])
     
+    log("Starting algo for {0} layers".format(n_layers))
     
     # Start workers, que up pushforward
     start()
@@ -218,7 +221,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     
     
     # Schedule pullback of out lp
-    add_task( (TaskMessage.PULL_BACK_OUTLP, n_layers-1, out_lp_m, out_lp_b, centers[-1]) )
+    add_task( (TaskMessage.PULL_BACK_OUTLP, n_layers, out_lp_m, out_lp_b, centers[-1]) )
     
     
     # Start loop acting on returned messages
@@ -234,10 +237,12 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
        
         # If message says a pushforward is done, que the next if available, or set flags
         if msg == ReturnMessage.PUSH_F_DONE:
-            
 
             # Get the postcond
-            postconds[layer+1] = data
+            postconds[layer+1] = data[0]
+            
+            log("Added postcond {0}".format(data[0]))   # DEBUG
+            log("Layer {0} has postcond of dim {1}".format(layer+1, data[0].num_neuron))
             
             # If we also have a precondtion, schedule an inclusion check
             if preconds[layer+1] is not None:
@@ -258,9 +263,16 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         # If the pullback is done, schedule next one, set flags, and schedule an inclusion check.
         elif msg == ReturnMessage.PULL_B_DONE:
             
-            # Get the postcond
-            preconds[layer-1] = data[0]
+            # Get the precond
+            if len(data[0]) > 0:
+                preconds[layer-1] = data[0][0]      # For now, just pick the first precond produced
+            else:
+                stop()
+                return PermCheckReturnStruct( PermCheckReturnStatus.INCONCLUSIVE )
             
+            log("Added precond {0}".format(data[0][0]))   # DEBUG
+            log("Layer {0} has precond of dim {1}".format(layer-1, data[0][0].num_neuron))
+
             # If we also have a precondtion, schedule an inclusion check
             if postconds[layer-1] is not None:
                 add_task( (TaskMessage.INCLUSION_CHK, layer-1, postconds[layer-1], preconds[layer-1]) )
@@ -283,15 +295,20 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             if len(data) == 0:  
                 log("Found proof via inclusion at layer {0}".format(layer))
                 stop()
-                ret = PermCheckReturnStruct( PermCheckReturnStatus.PROOF, 
+                return PermCheckReturnStruct( PermCheckReturnStatus.PROOF, 
                                                 postconds[:layer+1], preconds[layer:])
-                return ret
             
             n_incl_check += 1
 
         else:
             log("Unknown return message {0}".format(msg))
-    
+   
+   
+    # If we failed to find a proof or a cex, return inconclusive
+    return PermCheckReturnStruct( PermCheckReturnStatus.INCONCLUSIVE )
+   
+   
+   
     
 if __name__ == "__main__":
 

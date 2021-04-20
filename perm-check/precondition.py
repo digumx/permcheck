@@ -11,6 +11,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from global_consts import FLOAT_ATOL
+from concurrency import log
 
 
 class NegSideType(Enum):
@@ -144,7 +145,7 @@ class DisLinearPrecond:
         else:
             assert False
             
-        return repr(d)
+        return "DisLinearPrecond({0})".format(repr(d))
     
     def get_pos_constrs(self) -> tuple[ArrayLike, ArrayLike]:
         """
