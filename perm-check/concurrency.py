@@ -63,7 +63,7 @@ if USE_MP:
                 log("Task recieved") #DEBUG
                 
                 # Perform task:
-                ret = kern(tsk)
+                ret = kern(*tsk)
                 has_ret = True
             
             # Push return

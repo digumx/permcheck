@@ -36,14 +36,14 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
     # Loop over all outer constraints, optimize for max value.
     i = 0 #DEBUG
     for c, b in zip(outer_ub_a, outer_ub_b):
-        print(f"Checked constraint {i} of {len(outer_ub_a)}, found {len(l_cex)} cexes")
+        log(f"Checked constraint {i} of {len(outer_ub_a)}, found {len(l_cex)} cexes")
         i += 1
         
         res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
                 method = SCIPY_LINPROG_METHOD)      # Call optimizer
         
         if res.status == 2:    # Inner is infeasable
-            print("Infeasable inner") #DEBUG
+            log("Infeasable inner") #DEBUG
             return
         
         elif res.status == 0:
@@ -55,7 +55,7 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
         else:
             raise RuntimeError("Optimizer returned bad status: {0}".format(res.status))
     
-    print(f"Lp check leaves with {len(l_cex)} cexes")
+    log(f"Lp check leaves with {len(l_cex)} cexes")
 
 
 
@@ -91,7 +91,7 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
     
     # If postc is all positive, just check inclusion in the positive region
     if postc_all_pos or len(lcex) >= n_cex:
-        print("Postcondition is entirely in positive domain") #DEBUG
+        log("Postcondition is entirely in positive domain") #DEBUG
         check_lp_inclusion(None, None, None, None, p_reg_m, p_reg_b, (-1, 1), n_cex-len(lcex), lcex)
         return _pp_lcex(lcex)
     
@@ -100,7 +100,7 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
     
     # If prec does not cover any negative side, then 
     if prec.neg_side_type == NegSideType.NONE:
-        print("No negative side behavior for postcondition") #DEBUG
+        log("No negative side behavior for postcondition") #DEBUG
         
         # look for negative side points in postc
         for i in np.where(axlb < 0)[0]:
@@ -108,7 +108,7 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
             # Build alpha and add cex
             alpha = np.ones(postc.reg_dim)
             alpha[ np.where(postc.basis[:,i] > 0) ] = -1
-            print( "Positive side violation" )#DEBUG
+            log( "Positive side violation" )#DEBUG
             lcex.append(alpha)
             assert np.any(lcex[-1] < 0) #TODO remove DEBUG(?)
             if len(lcex) >= n_cex:
@@ -131,7 +131,7 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
 
     
     if prec.neg_side_type == NegSideType.QUAD:
-        print("Quad inclusion check") #DEBUG
+        log("Quad inclusion check") #DEBUG
         
         # Find the plane seperating the positive and negative side
         sep_plane = np.zeros(prec.num_neuron)
@@ -144,14 +144,14 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
         # Find cexes from above sep plane
         check_lp_inclusion(-spp_m[np.newaxis,:], np.array([-spp_b]), None, None, p_lp_m, p_lp_b, 
                                 (-1, 1), n_cex-len(lcex), lcex)
-        print(f"{len(lcex)} cexes after above sep plane") 
+        log(f"{len(lcex)} cexes after above sep plane") 
         if len(lcex) >= n_cex:
             return _pp_lcex(lcex)
         
         # Find cexes from below sep plane
         check_lp_inclusion(spp_m[np.newaxis,:], np.array([spp_b]), None, None, n_lp_m, n_lp_b, 
                                 (-1, 1), n_cex-len(lcex), lcex)
-        print(f"{len(lcex)} cexes after below sep plane") 
+        log(f"{len(lcex)} cexes after below sep plane") 
         if len(lcex) >= n_cex:
             return _pp_lcex(lcex)
         
@@ -193,65 +193,65 @@ if __name__ == "__main__":
         #                                        neg_side_type = NegSideType.QUAD,
         #                                        neg_side_quad = [1, 2])
         #postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -0.9, -0.9]))
-        #print(check_inclusion(postc, prec, n_cex = 100))
+        #log(check_inclusion(postc, prec, n_cex = 100))
        
         
         if sys.argv[2] == "1":      # Should return nothing
             prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), neg_side_type = NegSideType.NONE)
             postc = LinearPostcond(np.array([[0, 0.1, 0.1], [0.1, 0, 0]]), np.array([0.5, 0.5, 0.5]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
         
         elif sys.argv[2] == "2":    # Should produce a cex from positive side failure
             prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), 
                                                             neg_side_type = NegSideType.NONE)
             postc = LinearPostcond(np.array([[0, 0.1, 0.1], [0.6, 0, 0]]), np.array([0.5, 0.5, 0.5]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
         
         elif sys.argv[2] == "3":    # Same as before, but should produce more cexes from negative side
             prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), 
                                                             neg_side_type = NegSideType.NONE)
             postc = LinearPostcond(np.array([[0, 1, 1], [0.6, 0, 0]]), np.array([0.5, 0.5, 0.5]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
         
         elif sys.argv[2] == "4":    # Zero pullback should cover things around zero, no cexes
             prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), 
                                                             neg_side_type = NegSideType.ZERO)
             postc = LinearPostcond(np.array([[0, 0.5, 0.5], [0.5, 0, 0]]), np.array([0, 0, 0]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
         
         elif sys.argv[2] == "5":    # Should violate the negative side 
             prec = DisLinearPrecond(np.array([[1, 1, 1]]).T, np.array([3]), 
                                                             neg_side_type = NegSideType.ZERO)
             postc = LinearPostcond(np.array([[0, 0.1, 0.1], [1.1, 0, 0]]), np.array([0, 0, 0]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
         elif sys.argv[2] == "6":    # Should jut out of positive region
             prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
                                                     neg_side_type = NegSideType.QUAD,
                                                     neg_side_quad = [1, 2])
             postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -0.9, -0.9]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
         elif sys.argv[2] == "7":    # Should be sat
             prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
                                                     neg_side_type = NegSideType.QUAD,
                                                     neg_side_quad = [1, 2])
             postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.6, -0.9, -0.9]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
         elif sys.argv[2] == "8":    # Should be sat
             prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
                                                     neg_side_type = NegSideType.QUAD,
                                                     neg_side_quad = [1, 2])
             postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.9, -1, -1]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
         elif sys.argv[2] == "9":    # Should be sat
             prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
                                                     neg_side_type = NegSideType.QUAD,
                                                     neg_side_quad = [1, 2])
             postc = LinearPostcond(np.array([[0, 1, 1], [0.1, 0, 0]]), np.array([2.15, -0.7, -0.7]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
         elif sys.argv[2] == "10":    # Should be sat
             prec = DisLinearPrecond(np.array([[1, 1, 1], [-1, -1, -1]]).T, np.array([3, -2]), 
@@ -259,7 +259,7 @@ if __name__ == "__main__":
                                                     neg_side_quad = [1, 2])
             postc = LinearPostcond(np.array([[0, -0.4, 0.4], [-0.4, 0.4, 0]]), 
                                                     np.array([0.8, 0.8, 0.8]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
         
         elif sys.argv[2] == "11":    # Jut out of negative region
@@ -268,7 +268,7 @@ if __name__ == "__main__":
                                                     neg_side_quad = [1, 2])
             postc = LinearPostcond(np.array([[0, -0.5, 0.5], [-0.5, 0.5, 0]]), 
                                                 np.array([1.1, 1.1, 0.3]))
-            print(check_inclusion(postc, prec, n_cex = 100))
+            log(check_inclusion(postc, prec, n_cex = 100))
     
     
     elif sys.argv[1] == "fuzz":
@@ -307,7 +307,7 @@ if __name__ == "__main__":
             
         def run_pb():
             global prec, postc
-            print("Running pullback")
+            log("Running pullback")
             ret = check_inclusion(postc, prec, n_cex=n_cex)
         
         if len(sys.argv) >= 4 and sys.argv[3] == "checklog":
@@ -331,7 +331,7 @@ if __name__ == "__main__":
                     
                 postc = LinearPostcond(pst_v, pst_c)
                 
-                print("Running inclusion check")
+                log("Running inclusion check")
                 try:
                     t += timeit(run_pb, number=1)
                 except Exception as e:
@@ -342,9 +342,9 @@ if __name__ == "__main__":
                 
         
         for i in range(n_run):
-            print(f"Run {i} of {n_run}")
+            log(f"Run {i} of {n_run}")
 
-            print("Generating data")
+            log("Generating data")
             pre_m = rand_sparce_matrix(n,k2,p1)
             pst_v = ortho_group.rvs(n)[:k1, :] * basvar
             pre_b = (np.random.rand(k2) - 0.5) * bndvar
@@ -354,22 +354,22 @@ if __name__ == "__main__":
             if nst <= 0.333:
                 prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.NONE)
                 n_n += 1
-                print("NONE postcond")
+                log("NONE postcond")
             elif nst > 0.333 and nst <= 0.666:
                 pre_b = np.random.rand(k2) * 0.5 * bndvar  # pre_b >= 0
                 prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.ZERO)
                 n_z += 1
-                print("ZERO postcond")
+                log("ZERO postcond")
             else:
                 nsq = np.random.randn(n)
                 prec = DisLinearPrecond(pre_m, pre_b, neg_side_type = NegSideType.QUAD, 
                                         neg_side_quad = np.where( nsq < 0.5) )
                 n_q += 1
-                print("QUAD postcond")
+                log("QUAD postcond")
                 
             postc = LinearPostcond(pst_v, pst_c)
             
-            print("Running inclusion check")
+            log("Running inclusion check")
             try:
                 t += timeit(run_pb, number=1)
             except Exception as e:
@@ -377,5 +377,5 @@ if __name__ == "__main__":
                 raise e
 
         t /= n_run
-        print(f"The average time for inclusion check is {t}")
-        print(f"There were {n_n} NONE, {n_z} ZERO and {n_q} QUAD")
+        log(f"The average time for inclusion check is {t}")
+        log(f"There were {n_n} NONE, {n_z} ZERO and {n_q} QUAD")

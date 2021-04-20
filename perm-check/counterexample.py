@@ -83,7 +83,7 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
         
         # Project candidate and clamp to alpha
         n_A = null_space(A.T, rcond = FLOAT_ATOL)
-        #print(f"A: {A.shape}, n_A: {n_A.shape}, p: {p.shape}, cand: {cand.shape}")
+        #log(f"A: {A.shape}, n_A: {n_A.shape}, p: {p.shape}, cand: {cand.shape}")
         if n_A.shape[0] >= 1: 
             proj_p = p + (cand - p) @ n_A @ n_A.T
         else:
@@ -133,12 +133,12 @@ if __name__ == "__main__":
             x = alph @ basis + center
             x[ np.where( x < 0 )] = 0
             y = x @ weights + bias
-            print(y)
-            print(x)
+            log(y)
+            log(x)
             pbs = pullback_cex(y, LinearPostcond(basis, center), weights, bias)
-            print(pbs)
+            log(pbs)
             a, m = check_pb(y, pbs, basis, center, weights, bias)
-            print(f"Average score {a}, minimum score {m}")
+            log(f"Average score {a}, minimum score {m}")
         
         if sys.argv[2] == "1":
             basis =     np.array([[1, 0, 0], [0, 1, 0]])
@@ -150,12 +150,12 @@ if __name__ == "__main__":
             x = alph @ basis + center
             x[ np.where( x < 0 )] = 0
             y = x @ weights + bias
-            print(y)
-            print(x)
+            log(y)
+            log(x)
             pbs = pullback_cex(y, LinearPostcond(basis, center), weights, bias)
-            print(pbs)
+            log(pbs)
             a, m = check_pb(y, pbs, basis, center, weights, bias)
-            print(f"Average score {a}, minimum score {m}")
+            log(f"Average score {a}, minimum score {m}")
         
         elif sys.argv[2] == "2":
             basis =     np.array([[1, 0, 0], [0, 1, 0]])
@@ -167,12 +167,12 @@ if __name__ == "__main__":
             x = alph @ basis + center
             x[ np.where( x < 0 )] = 0
             y = x @ weights + bias
-            print(y)
-            print(x)
+            log(y)
+            log(x)
             pbs = pullback_cex(y, LinearPostcond(basis, center), weights, bias)
-            print(pbs)
+            log(pbs)
             a, m = check_pb(y, pbs, basis, center, weights, bias)
-            print(f"Average score {a}, minimum score {m}")
+            log(f"Average score {a}, minimum score {m}")
         
         elif sys.argv[2] == "3":
             basis =     np.array([[1, 0, 0], [0, 1, 0]])
@@ -184,12 +184,12 @@ if __name__ == "__main__":
             x = alph @ basis + center
             x[ np.where( x < 0 )] = 0
             y = x @ weights + bias
-            print(y)
-            print(x)
+            log(y)
+            log(x)
             pbs = pullback_cex(y, LinearPostcond(basis, center), weights, bias)
-            print(pbs)
+            log(pbs)
             a, m = check_pb(y, pbs, basis, center, weights, bias)
-            print(f"Average score {a}, minimum score {m}")
+            log(f"Average score {a}, minimum score {m}")
         
         elif sys.argv[2] == "4":
             basis =     np.array([[1, 0, 0], [0, 1, 0]])
@@ -200,12 +200,12 @@ if __name__ == "__main__":
             x = alph @ basis + center
             x[ np.where( x < 0 )] = 0
             y = x @ weights + bias
-            print(y)
-            print(x)
+            log(y)
+            log(x)
             pbs = pullback_cex(y, LinearPostcond(basis, center), weights, bias)
-            print(pbs)
+            log(pbs)
             a, m = check_pb(y, pbs, basis, center, weights, bias)
-            print(f"Average score {a}, minimum score {m}")
+            log(f"Average score {a}, minimum score {m}")
         
         elif sys.argv[2] == "5":
             basis =     np.array([[1, 0, 0], [0, 1, 0]])
@@ -216,12 +216,12 @@ if __name__ == "__main__":
             x = alph @ basis + center
             x[ np.where( x < 0 )] = 0
             y = x @ weights + bias
-            print(y)
-            print(x)
+            log(y)
+            log(x)
             pbs = pullback_cex(y, LinearPostcond(basis, center), weights, bias)
-            print(pbs)
+            log(pbs)
             a, m = check_pb(y, pbs, basis, center, weights, bias)
-            print(f"Average score {a}, minimum score {m}")
+            log(f"Average score {a}, minimum score {m}")
             
     elif sys.argv[1] == "fuzz":
 
@@ -272,7 +272,7 @@ if __name__ == "__main__":
                 cex = cx @ weights + bias
                 postc = LinearPostcond(basis, center)
                 
-                print("Running inclusion check")
+                log("Running inclusion check")
                 try:
                     t += timeit(run_pb, number=1)
                 except Exception as e:
@@ -283,9 +283,9 @@ if __name__ == "__main__":
                 
         
         for i in range(n_run):
-            print(f"Run {i} of {n_run}")
+            log(f"Run {i} of {n_run}")
 
-            print("Generating data")
+            log("Generating data")
             weights     = rand_sparce_matrix(n1, n2, pw) * weivar
             bias        = (np.random.rand(n2) - 0.5) * biavar
             basis       = ortho_group.rvs(n1)[:k, :] * basvar
@@ -297,7 +297,7 @@ if __name__ == "__main__":
             cex = cx @ weights + bias
             postc = LinearPostcond(basis, center)
             
-            print("Running inclusion check")
+            log("Running inclusion check")
             try:
                 t += timeit(run_pb, number=1)
             except Exception as e:
@@ -315,6 +315,6 @@ if __name__ == "__main__":
             
 
         t /= n_run
-        print(f"The average time for inclusion check is {t}")
-        print(f"There were {n_sat} of {n_run} successfull pullbacks")
-        print(f"The average score was {av/n_run}, the minimum was {mn}")
+        log(f"The average time for inclusion check is {t}")
+        log(f"There were {n_sat} of {n_run} successfull pullbacks")
+        log(f"The average score was {av/n_run}, the minimum was {mn}")

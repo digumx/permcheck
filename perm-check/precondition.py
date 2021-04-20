@@ -316,7 +316,7 @@ if __name__ == "__main__":  #DEBUG
         
     def run_pb():
         global mat, bnd, pt, weights, bias, n_succ, n_none, n_zero, n_quad
-        print("Running pullback")
+        log("Running pullback")
         ret = pull_back_precond(DisLinearPrecond(mat, bnd), weights, bias, pt)
         n_succ += len(ret)
         for r in ret:
@@ -336,7 +336,7 @@ if __name__ == "__main__":  #DEBUG
             bnd = np.array(data['bnd'])
             pt = np.array(data['pt'])
             
-            print("Running pullback")
+            log("Running pullback")
             try:
                 t += timeit(run_pb, number=1)
             except Exception as e:
@@ -347,9 +347,9 @@ if __name__ == "__main__":  #DEBUG
             
     
     for i in range(n_run):
-        print(f"Run {i} of {n_run}")
+        log(f"Run {i} of {n_run}")
 
-        print("Generating data")
+        log("Generating data")
         mat = rand_sparce_matrix(m,k,2*p0)
         pt = (np.random.rand(n) - 0.5) * poivar
         weights = rand_sparce_pos_matrix(n,m,p0)
@@ -358,7 +358,7 @@ if __name__ == "__main__":  #DEBUG
         p_[ np.where(p_ < 0) ] = 0
         bnd = (p_ @ weights + bias) @ mat + 1
         
-        print("Running pullback")
+        log("Running pullback")
         try:
             t += timeit(run_pb, number=1)
         except Exception as e:
@@ -366,6 +366,6 @@ if __name__ == "__main__":  #DEBUG
             raise e
 
     t /= n_run
-    print(f"The average time for pullback is {t}")
-    print(f"The layer went from {n} to {m} neurons and the right precondition had {k} constraints")
-    print(f"There were {n_succ} pullbacks, {n_none} NONE, {n_zero} ZERO, {n_quad} QUAD")
+    log(f"The average time for pullback is {t}")
+    log(f"The layer went from {n} to {m} neurons and the right precondition had {k} constraints")
+    log(f"There were {n_succ} pullbacks, {n_none} NONE, {n_zero} ZERO, {n_quad} QUAD")

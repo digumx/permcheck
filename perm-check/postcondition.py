@@ -12,6 +12,7 @@ from scipy.linalg import svd
 
 from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL, REDUCE_POSTCOND_BASIS
 from utils import check_parallel
+from concurrency import log
 
 
 class LinearPostcond:
@@ -37,7 +38,7 @@ class LinearPostcond:
         """
         Construct a new `LinearPostcond`. If one argument is given, it is assumed to be the packed
         matrix representing the postcondition. Else, two arguments are expected, first being a matrix
-        where each vector is a basis, and the other being the vector c. Optionally, a third keyword
+        where each row is a basis, and the other being the vector c. Optionally, a third keyword
         argument `perp_basis` may be provided. If provided, it must be a matrix whose rows form the
         basis of the space perpendicular to the row span of the first matrix given.
         """
@@ -110,11 +111,11 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, Ar
     
     # Do the tie class analysis for each group. The sign denotes which region we are operating on.
     for tc_src, sgn in ((tc_pos, 1), (tc_neg, -1)):
-        #print(f"Checking group {sgn}") #DEBUG
+        #log(f"Checking group {sgn}") #DEBUG
         
         # While there are more tie classes to be found
         while len(tc_src) > 0:
-            #print(f"Remaining number of neurons to classify: {len(tc_src)}      ", end='\r')#DEBUG
+            #log(f"Remaining number of neurons to classify: {len(tc_src)}      ", end='\r')#DEBUG
 
             i = tc_src[0]
             tc_src_ = []
@@ -245,7 +246,7 @@ if __name__ == '__main__':
         
     def run_pf():
         global tc1, basis, center
-        print("Running bound based push forward")
+        log("Running bound based push forward")
         push_forward_postcond(LinearPostcond(basis, center), weights, bias)
     
     if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
@@ -256,7 +257,7 @@ if __name__ == '__main__':
             weights = np.array(data['weights'])
             bias = np.array(data['bias'])
             
-            print("Running pushforward")
+            log("Running pushforward")
             try:
                 t += timeit(run_pf, number=1)
             except Exception as e:
@@ -267,16 +268,16 @@ if __name__ == '__main__':
             
     
     for i in range(n_run):
-        print(f"Run {i} of {n_run}")
+        log(f"Run {i} of {n_run}")
 
-        print("Generating data")
+        log("Generating data")
         basis = rand_sparce_matrix(k,n,p0)
         center = (np.random.rand(n) - 0.5) * cenvar
         
         weights = rand_sparce_matrix(n,n_,p0)
         bias = (np.random.rand(n_) - 0.5) * biavar
         
-        print("Running pushforward")
+        log("Running pushforward")
         try:
             t += timeit(run_pf, number=1)
         except Exception as e:
@@ -284,5 +285,5 @@ if __name__ == '__main__':
             raise e
 
     t /= n_run
-    print(f"The average time for pushforward is {t}")
-    print(f"There were {n} relu neurons and the left space was {k} dimensional")
+    log(f"The average time for pushforward is {t}")
+    log(f"There were {n} relu neurons and the left space was {k} dimensional")
