@@ -104,9 +104,9 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
     
     # Pull back precond over layer
     elif task_id == TaskMessage.PULL_BACK:
-        prec, weights, biases, centr = args
+        prec, weights, bias, centr = args
         log("Pulling back over layer {0}".format(layer))
-        ret = pullback_precond(prec, weights, bias, centr)
+        ret = pull_back_precond(prec, weights, bias, centr)
         log("Pullback done")
         log("Returning {0}".format(ret)) #DEBUG
         return ReturnMessage.PULL_B_DONE, layer, ret
@@ -184,14 +184,15 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     # Duplicate weights and biases for permuted and unpermuted vars
     weights = [ np.block(  [[ w, np.zeros(w.shape) ],
                             [ np.zeros(w.shape), w ]] ) for w in weights ]
-    biases = [  np.repeat( b, 2 ) for b in biases ]
-
+    biases = [  np.concatenate((b, b)) for b in biases ]
+    
+    log("Doubled up weights {0} and biases {1}".format(weights, biases))
 
     # Generate first postcondition
     brn = (pre_ub - pre_lb) / 2
     cen = (pre_ub + pre_lb) / 2
-    brn = np.repeat(brn, 2)
-    cen = np.repeat(cen, 2)
+    brn = np.concatenate((brn, brn))
+    cen = np.concatenate((cen, cen))
     inp_b = np.block([ np.eye(n_inputs), np.zeros((n_inputs, n_inputs)) ])
     for i, p in enumerate(pre_perm):        # Permutations
         inp_b[i, n_inputs + p] = -1
@@ -205,11 +206,11 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     add_task( (TaskMessage.PUSH_FORD, 0, postconds[0], weights[1], biases[1]) )
     
     # Push forward center point
-    centers[0] = cen
-    for i in range(n_layers-1):
-        rc = np.copy(centers[i])
+    centers[0] = cen @ weights[0] + biases[0]
+    for i in range(1, n_layers):
+        rc = np.copy(centers[i-1])
         rc[ np.where( rc < 0 )] = 0
-        centers[i+1] = rc @ weights[i] + biases[i]
+        centers[i] = rc @ weights[i] + biases[i]
     
     
     # Set up LP for the output condition
@@ -228,7 +229,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     pf_remaining = True         # Is pushforwards all done?
     pb_remaining = True         # Is pullbacks all done
     n_incl_check = 0            # Number of inclusion checks performed
-    while pf_remaining or pb_remaining or n_incl_check >= n_layers:
+    while pf_remaining or pb_remaining or n_incl_check < n_layers:
         
         # Get returned message
         msg, layer, *data = get_return(wait=True)
@@ -263,7 +264,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         # If the pullback is done, schedule next one, set flags, and schedule an inclusion check.
         elif msg == ReturnMessage.PULL_B_DONE:
             
-            # Get the precond
+            # Get the precond, quit if none found
             if len(data[0]) > 0:
                 preconds[layer-1] = data[0][0]      # For now, just pick the first precond produced
             else:
@@ -286,25 +287,35 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             # Schedule next pullback
             log("Scheuling pullback across layer {0}".format(layer-1))
             add_task( (TaskMessage.PULL_BACK, layer-1, preconds[layer-1], weights[layer-1], 
-                        biases[layer-1]) )
+                        biases[layer-1], centers[layer-2]) )
                 
         # If the inclusion check is done, quit if successfull, or try to pull back cex
         elif msg == ReturnMessage.INCL_CHK_DONE:
             
+            cexes = data[0]
+            
             # Quit out and return if there are no cexes.
-            if len(data) == 0:  
+            if len(cexes) == 0:  
                 log("Found proof via inclusion at layer {0}".format(layer))
                 stop()
                 return PermCheckReturnStruct( PermCheckReturnStatus.PROOF, 
                                                 postconds[:layer+1], preconds[layer:])
             
             n_incl_check += 1
+            
+            log("No inclusion at layer {0}, found {2} cexes, checked {1} layers".format(
+                        layer, n_incl_check, len(cexes)))
+            
 
         else:
             log("Unknown return message {0}".format(msg))
-   
+  
+    
+    log("Main process coordination loop has stopped, flags are {0}, {1}, {2}".format(
+                pf_remaining, pb_remaining, n_incl_check))
    
     # If we failed to find a proof or a cex, return inconclusive
+    stop()
     return PermCheckReturnStruct( PermCheckReturnStatus.INCONCLUSIVE )
    
    
@@ -317,4 +328,5 @@ if __name__ == "__main__":
                 np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
     biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
     sig = [1, 0]
-    main(weights, biases, sig, np.array([-1, -1]), np.array([1,1]), sig, 0.1)
+    ret = main(weights, biases, sig, np.array([-1, -1]), np.array([1,1]), sig, 0.1)
+    print("Returned {0}".format(ret))

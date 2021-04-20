@@ -12,7 +12,7 @@ from scipy.linalg import svd
 
 from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL, REDUCE_POSTCOND_BASIS
 from utils import check_parallel
-from concurrency import log
+from concurrency import log, init
 
 
 class LinearPostcond:
@@ -78,7 +78,12 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     NOTE: This destroys the input bss.
     """
     
-    u, s, v = svd(bss, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
+    #u, s, v = svd(bss, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
+    u, s, v = svd(bss, overwrite_a=False, check_finite=True, lapack_driver=SCIPY_SVD_METHOD) #DEBUG
+    
+    if np.all( s < FLOAT_ATOL ):    # TODO This can happen if image is a single point, allow this
+        log("All bases are close to 0, bss: {0}, u: {1}, s: {2}, v: {3}".format(bss, u, s, v))
+        raise RuntimeError("Attempted to optimize Zero Basis")
     
     # Find the rank of bss
     cnum = FLOAT_ATOL * np.max(s)
@@ -88,6 +93,10 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     p = v[rnk:, :]
     v = v[:rnk, :]
     b = np.sum(np.absolute(u*s), axis=0)    # New bounds
+    
+    if np.any( b < FLOAT_ATOL ): #DEBUG
+        log("Bounds are close to 0: {0}, bss: {1}, u: {2}, s: {3}, v: {4}".format(b, bss, u, s, v))
+        raise RuntimeError()
     
     return v / b[:, np.newaxis], p
 
@@ -100,6 +109,9 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, Ar
     """
 
     # First, we use tie class analysis to build a list of basis vectors for each class.
+
+    log("ATTENTION ATTENTION: Pushing forward basis {0}, center {1}".format(left_cond.basis,
+        left_cond.center)) #DEBUG
 
     # The center point defines some of the cuts for the tie class - things in the same tie class
     # should have same sign in center.
@@ -174,6 +186,8 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, Ar
     # New center is relu of old center
     center = np.copy(left_cond.center)
     center[np.where(left_cond.center < 0)] = 0
+ 
+    log("Center on the other side of relu: {0}".format(center)) #DEBUG
     
     return basis, center
 
@@ -197,6 +211,9 @@ def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: Array
     post_spn = basis @ weights
     post_center = center @ weights + bias
     
+    log("center {0}, post_center {1}, basis {2}, post_spn {3}, weights {4}, bias {5}".format(
+                            center, post_center, basis, post_spn, weights, bias)) #DEBUG
+    
     # Optimise span to basis
     if REDUCE_POSTCOND_BASIS:
         post_basis, perp_basis = optimize_postcond_basis(post_spn)
@@ -218,44 +235,86 @@ if __name__ == '__main__':
     import sys
     
     from debug import rand_sparce_matrix
+   
+    init(None)
+   
+    if sys.argv[1] == "unit":
     
+        if sys.argv[2] == "1":
+            
+            postc = LinearPostcond(np.array([[1000, -1000, 1000, -1000, 1000, -1000, 1000, -1000],
+                                            [-1000, 1000, -1000, 1000, -1000, 1000, -1000, 1000]]),
+                                   np.array([0, 0, -1, -1, 0, 0, -1, -1]))
+            w = np.array([  [ 1, 0, 0, 0],
+                            [ 0, 1, 0, 0],
+                            [-1, 0, 0, 0],
+                            [ 0,-1, 0, 0],
+                            [ 0, 0, 1, 0],
+                            [ 0, 0, 0, 1],
+                            [ 0, 0,-1, 0],
+                            [ 0, 0, 0,-1] ])
+            b = np.array([ 0, 0, 0, 0 ])
+            pf = push_forward_postcond(postc, w, b)
+            print("Basis: {0}, Center: {1}".format(pf.basis, pf.center))
+    
+    elif sys.argv[1] == "fuzz":
 
-    k = 200
-    n = 200
-    n_ = 120
-    cenvar = 10
-    biavar = 10
-    p0 = random.random() * 0.1
-    p1 = random.random() * 0.15
-    n_run = 1000
-    
-    t = 0
-
-    basis, center, weights, bias = None, None, None, None
-    
-    def fail_dump():
-        global n, k, basis, center, tc1, tc2
-        # Dump basis, center and tie classes found to log if methods do not match.
-        data = {}
-        data['basis'] = basis.tolist()
-        data['center'] = center.tolist()
-        data['weights'] = weights.tolist()
-        data['bias'] = bias.tolist()
-        with open(sys.argv[1], 'w') as log:
-            log.write(str(data))
+        k = 200
+        n = 200
+        n_ = 120
+        cenvar = 10
+        biavar = 10
+        p0 = random.random() * 0.1
+        p1 = random.random() * 0.15
+        n_run = 1000
         
-    def run_pf():
-        global tc1, basis, center
-        log("Running bound based push forward")
-        push_forward_postcond(LinearPostcond(basis, center), weights, bias)
-    
-    if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
-        with open(sys.argv[1]) as log:
-            data = eval(log.read())
-            basis = np.array(data['basis'])
-            center = np.array(data['center'])
-            weights = np.array(data['weights'])
-            bias = np.array(data['bias'])
+        t = 0
+
+        basis, center, weights, bias = None, None, None, None
+        
+        def fail_dump():
+            global n, k, basis, center, tc1, tc2
+            # Dump basis, center and tie classes found to log if methods do not match.
+            data = {}
+            data['basis'] = basis.tolist()
+            data['center'] = center.tolist()
+            data['weights'] = weights.tolist()
+            data['bias'] = bias.tolist()
+            with open(sys.argv[1], 'w') as log:
+                log.write(str(data))
+            
+        def run_pf():
+            global tc1, basis, center
+            log("Running bound based push forward")
+            push_forward_postcond(LinearPostcond(basis, center), weights, bias)
+        
+        if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
+            with open(sys.argv[1]) as log:
+                data = eval(log.read())
+                basis = np.array(data['basis'])
+                center = np.array(data['center'])
+                weights = np.array(data['weights'])
+                bias = np.array(data['bias'])
+                
+                log("Running pushforward")
+                try:
+                    t += timeit(run_pf, number=1)
+                except Exception as e:
+                    fail_dump()
+                    raise e
+                
+                exit()
+                
+        
+        for i in range(n_run):
+            log(f"Run {i} of {n_run}")
+
+            log("Generating data")
+            basis = rand_sparce_matrix(k,n,p0)
+            center = (np.random.rand(n) - 0.5) * cenvar
+            
+            weights = rand_sparce_matrix(n,n_,p0)
+            bias = (np.random.rand(n_) - 0.5) * biavar
             
             log("Running pushforward")
             try:
@@ -263,27 +322,7 @@ if __name__ == '__main__':
             except Exception as e:
                 fail_dump()
                 raise e
-            
-            exit()
-            
-    
-    for i in range(n_run):
-        log(f"Run {i} of {n_run}")
 
-        log("Generating data")
-        basis = rand_sparce_matrix(k,n,p0)
-        center = (np.random.rand(n) - 0.5) * cenvar
-        
-        weights = rand_sparce_matrix(n,n_,p0)
-        bias = (np.random.rand(n_) - 0.5) * biavar
-        
-        log("Running pushforward")
-        try:
-            t += timeit(run_pf, number=1)
-        except Exception as e:
-            fail_dump()
-            raise e
-
-    t /= n_run
-    log(f"The average time for pushforward is {t}")
-    log(f"There were {n} relu neurons and the left space was {k} dimensional")
+        t /= n_run
+        log(f"The average time for pushforward is {t}")
+        log(f"There were {n} relu neurons and the left space was {k} dimensional")
