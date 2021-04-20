@@ -152,7 +152,7 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, Ar
                     rnk_1 = False           # Then we cannot argue that class of i must have 1 basis
                     tc.append(j)
                 # Else, check if joint system is one dimensional
-                elif np.all( check_parallel(i_vec, j_vec) ):
+                elif np.all( check_parallel(i_vec, j_vec, anti_are_parallel = False) ):
                     tc.append(j)
                 # Else, cannot be in same tie classes, look at it again in the future
                 else:
@@ -187,7 +187,8 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, Ar
     center = np.copy(left_cond.center)
     center[np.where(left_cond.center < 0)] = 0
  
-    log("Center on the other side of relu: {0}".format(center)) #DEBUG
+    log("Center after relu: {0}".format(center)) #DEBUG
+    log("Basis after relu: {0}".format(basis)) #DEBUG
     
     return basis, center
 
@@ -253,6 +254,19 @@ if __name__ == '__main__':
                             [ 0, 0, 0, 1],
                             [ 0, 0,-1, 0],
                             [ 0, 0, 0,-1] ])
+            b = np.array([ 0, 0, 0, 0 ])
+            pf = push_forward_postcond(postc, w, b)
+            print("Basis: {0}, Center: {1}".format(pf.basis, pf.center))
+        
+        if sys.argv[2] == "2":
+            
+            postc = LinearPostcond(np.array([[1, -1, 1, -1],
+                                            [-1, 1, -1, 1]]),
+                                   np.array([0, 0, 0, 0]))
+            w = np.array([  [ 1, 0, 0, 0],
+                            [ 0, 1, 0, 0],
+                            [ 0, 0, 1, 0],
+                            [ 0, 0, 0, 1] ])
             b = np.array([ 0, 0, 0, 0 ])
             pf = push_forward_postcond(postc, w, b)
             print("Basis: {0}, Center: {1}".format(pf.basis, pf.center))

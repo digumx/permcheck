@@ -15,7 +15,6 @@ from scipy.linalg import lstsq, null_space
 from postcondition import LinearPostcond
 from global_consts import CEX_PULLBACK_NUM_PULLBACKS, CEX_PULLBACK_SAMPLES_SCALE
 from global_consts import FLOAT_RTOL, FLOAT_ATOL, SCIPY_LSTSQ_METHOD, NUMPY_SORT_METHOD
-from utils import check_parallel
 from concurrency import log
 
 
