@@ -38,9 +38,9 @@ class ReturnMessage(Enum):
     INCL_CHK_DONE   = 2     # Checking inclusion is done
 
 
-class PermCheckReturnStatus(Enum):
+class PermCheckReturnKind(Enum):
     """
-    The status of a return from the algorithm
+    The kind of a return from the algorithm
     """
     PROOF           = 'proof'
     COUNTEREXAMPLE  = 'counterexample'
@@ -53,28 +53,98 @@ class PermCheckReturnStruct:
 
     Members:
     
-    status      -   The reason for returning
+    kind            -   The kind of return that happened, proof, cex or inconclusive
     
-    If the status is 'proof', the follwing are present:
+    If the kind is 'proof', the follwing are present:
     
-    postconds   -   A list of postconditions leading up to the layer where inclusion was found
-    preconds    -   A list of preconditions from the list where the postcondition was found
+    inp_basis,
+    inp_center      -   Basis and center for the input.
+    postconds       -   A list of postconditions leading up to the layer where inclusion was found
+    out_lp_m,
+    out_lp_b        -   Convex polytope of the safe region in the output.
+    preconds        -   A list of preconditions from the layer where the postcondition was found
+    incl_layer      -   The layer at which the inclusion was found
     
-    If the status is 'counterexample', the following are present:
+    If the kind is 'counterexample', the following are present:
     
-    counterexample  -   A counterexample input vector.
+    counterexamples -   A list of counterexamples. Each counterexample should be a 5-tuple: the
+                        input, the permuted input, the output produced, the output permuted
+                        according to the output permutation and the ouput produced from the
+                        permuted input.
     """
-    def __init__(self, status : PermCheckReturnStatus, *args):
+    def __init__(self, kind : PermCheckReturnKind, *args):
         """
-        Args should inti other members depending on what status is.
+        Args should init other members depending on what kind is, see above. 
         """
-        self.status = status
+        self.kind = kind
         
-        if self.status == PermCheckReturnStatus.PROOF:
-            self.postconds, self.preconds = args
+        if self.kind == PermCheckReturnKind.PROOF:
+            (self.inp_basis, self.inp_center, self.postconds, 
+                self.out_lp_m, self.out_lp_b, self.preconds, self.incl_layer) = args
             
-        elif self.status == PermCheckReturnStatus.COUNTEREXAMPLE:
-            self.counterexample = args
+        elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
+            self.counterexamples = args[0]
+
+    def __str__(self):
+        """
+        Print out a short summary of the proof or counterexample situation
+        """
+        if self.kind == PermCheckReturnKind.INCONCLUSIVE:
+            return "PermCheck has returned INCONCLUSIVE"
+        
+        elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
+            return "PermCheck has found {0} COUNTEREXAMPLES".format(len(self.counterexamples))
+        
+        elif self.kind == PermCheckReturnKind.PROOF:
+            return "PermCheck has successfully PROVED via inclusion at layer {0}".format(
+                                                                            self.incl_layer)
+
+    def __repr__(self):
+        """
+        Print all details of proof, or all counterexamples.
+        """
+        if self.kind == PermCheckReturnKind.INCONCLUSIVE:
+            return "PermCheck has returned INCONCLUSIVE"
+
+        elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
+            s = "PermCheck has found {0} COUNTEREXAMPLES: \n".format(len(self.counterexamples))
+            for i, (x, sx, nx, snx, nsx) in enumerate(self.counterexamples()):
+                s += "\nCounterexample {0}:\n".format(i)
+                s += "    Input:                            {0}\n".format(x)
+                s += "    Permuted Input:                   {0}\n".format(sx)
+                s += "    Output from Input:                {0}\n".format(nx)
+                s += "    Permutation of Output from Input: {0}\n".format(snx)
+                s += "    Output from Permuted Input:       {0}\n".format(nsx)
+            return s
+        
+        elif self.kind == PermCheckReturnKind.PROOF:
+            s = "PermCheck has successfully PROVED via inclusion at layer {0}: \n".format(
+                                                                            self.incl_layer)
+            
+            s += "\nThe input joint vectors are given by:\n a @ {0} + {1}\n".format( self.inp_basis,
+                                                                                    self.inp_center)
+            for i, postc in enumerate(self.postconds):
+                s += "\nWhich leads to values after the linear layer {0} of form:\n".format(i)
+                s += "a @ {0} + {1}\n".format(postc.basis, postc.center)
+            
+            for i, prec in enumerate(self.preconds):
+                l = self.incl_layer + i
+                pm, pb = prec.get_pos_constrs()
+                s += "\nEach of are values after the linear layer {0} that satisfy:\n".format(l)
+                s += "x @ {0} <= {1}\n".format(pm, pb)
+                r = prec.get_neg_constrs()
+                if r is not None:
+                    nm, nb = r
+                    s += "    Or satisfy:\n"
+                    s += "x @ {0} <= {1}\n".format(nm, nb)
+                    
+            s += "\nWhich finally satisfy the LP:\n x @ {0} + {1}\n".format(self.out_lp_m,
+                                                                        self.out_lp_b)
+            s += "\nWhich is characterizes the output condition"
+
+            return s
+                
+        
 
 
 
@@ -191,13 +261,14 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     # Generate first postcondition
     brn = (pre_ub - pre_lb) / 2
     cen = (pre_ub + pre_lb) / 2
-    brn = np.concatenate((brn, brn))
-    cen = np.concatenate((cen, cen))
+    brn = np.concatenate((brn, brn[pre_perm]))
+    inp_c = np.concatenate((cen, cen[pre_perm]))
     inp_b = np.block([ np.eye(n_inputs), np.zeros((n_inputs, n_inputs)) ])
     for i, p in enumerate(pre_perm):        # Permutations
         inp_b[i, n_inputs + p] = -1
     inp_b *= brn[np.newaxis, :]             # Scale to fill bounds
-    postconds[0] = LinearPostcond(inp_b @ weights[0], cen @ weights[0] + biases[0])
+    log("Inp_c: {0}".format(inp_c.shape))
+    postconds[0] = LinearPostcond(inp_b @ weights[0], inp_c @ weights[0] + biases[0])
     
     log("Starting algo for {0} layers".format(n_layers))
     
@@ -206,7 +277,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     add_task( (TaskMessage.PUSH_FORD, 0, postconds[0], weights[1], biases[1]) )
     
     # Push forward center point
-    centers[0] = cen @ weights[0] + biases[0]
+    centers[0] = inp_c @ weights[0] + biases[0]
     for i in range(1, n_layers):
         rc = np.copy(centers[i-1])
         rc[ np.where( rc < 0 )] = 0
@@ -269,7 +340,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 preconds[layer-1] = data[0][0]      # For now, just pick the first precond produced
             else:
                 stop()
-                return PermCheckReturnStruct( PermCheckReturnStatus.INCONCLUSIVE )
+                return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE )
             
             log("Added precond {0}".format(data[0][0]))   # DEBUG
             log("Layer {0} has precond of dim {1}".format(layer-1, data[0][0].num_neuron))
@@ -298,8 +369,9 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             if len(cexes) == 0:  
                 log("Found proof via inclusion at layer {0}".format(layer))
                 stop()
-                return PermCheckReturnStruct( PermCheckReturnStatus.PROOF, 
-                                                postconds[:layer+1], preconds[layer:])
+                return PermCheckReturnStruct( PermCheckReturnKind.PROOF, 
+                        inp_b, inp_c, postconds[:layer+1], out_lp_m, out_lp_b, preconds[layer:],
+                        layer)
             
             n_incl_check += 1
             
@@ -316,7 +388,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
    
     # If we failed to find a proof or a cex, return inconclusive
     stop()
-    return PermCheckReturnStruct( PermCheckReturnStatus.INCONCLUSIVE )
+    return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE )
    
    
    
@@ -328,5 +400,8 @@ if __name__ == "__main__":
                 np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
     biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
     sig = [1, 0]
-    ret = main(weights, biases, sig, np.array([-1, -1]), np.array([1,1]), sig, 0.1)
-    print("Returned {0}".format(ret))
+    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.5)
+    print("Returned {1}: {0}".format(str(ret), ret.kind.value))
+    
+    print("Details:")
+    print(repr(ret))
