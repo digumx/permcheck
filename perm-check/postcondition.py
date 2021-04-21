@@ -98,7 +98,7 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
         log("Bounds are close to 0: {0}, bss: {1}, u: {2}, s: {3}, v: {4}".format(b, bss, u, s, v))
         raise RuntimeError()
     
-    return v / b[:, np.newaxis], p
+    return v * b[:, np.newaxis], p
 
     
 
@@ -218,6 +218,7 @@ def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: Array
     # Optimise span to basis
     if REDUCE_POSTCOND_BASIS:
         post_basis, perp_basis = optimize_postcond_basis(post_spn)
+        log("Optimized basis {0}".format(post_basis))
         return LinearPostcond(post_basis, post_center, perp_basis = perp_basis)
     
     # Or just return as is

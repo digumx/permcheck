@@ -138,7 +138,7 @@ class PermCheckReturnStruct:
                     s += "    Or satisfy:\n"
                     s += "x @ {0} <= {1}\n".format(nm, nb)
                     
-            s += "\nWhich finally satisfy the LP:\n x @ {0} + {1}\n".format(self.out_lp_m,
+            s += "\nWhich finally satisfy the LP:\n x @ {0} <= {1}\n".format(self.out_lp_m,
                                                                         self.out_lp_b)
             s += "\nWhich is characterizes the output condition"
 
@@ -288,7 +288,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     p_blk = np.zeros((n_outputs, n_outputs))
     for i, p in enumerate(post_perm):
         p_blk[p, i] = 1
-    out_lp_m = np.block([[ np.eye(n_outputs), p_blk ], [ -p_blk, -np.eye(n_outputs) ]])
+    out_lp_m = np.block([[ np.eye(n_outputs), -np.eye(n_outputs) ], [ -p_blk, p_blk,  ]])
     out_lp_b = np.ones(2 * n_outputs) * post_epsilon
     
     
@@ -400,7 +400,7 @@ if __name__ == "__main__":
                 np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
     biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
     sig = [1, 0]
-    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.5)
+    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1)
     print("Returned {1}: {0}".format(str(ret), ret.kind.value))
     
     print("Details:")
