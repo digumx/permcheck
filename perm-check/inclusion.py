@@ -58,14 +58,6 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
     log(f"Lp check leaves with {len(l_cex)} cexes")
 
 
-    
-def _pp_lcex(lcex):     # Post processign for lcex before return TODO Remove duplicates
-    if len(lcex) > 0:
-        return np.concatenate( [ c[np.newaxis, :] for c in lcex ], axis=0) @ postc.basis +\
-                        postc.center
-    else:
-        return []
-    
 
 def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1) \
                     -> list[ArrayLike]:
@@ -77,6 +69,14 @@ def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_c
     """
     assert postc.num_neuron == prec.num_neuron
    
+    
+    def _pp_lcex(lcex):     # Post processign for lcex before return TODO Remove duplicates
+        if len(lcex) > 0:
+            return np.concatenate( [ c[np.newaxis, :] for c in lcex ], axis=0) @ postc.basis +\
+                            postc.center
+        else:
+            return []
+    
     lcex = []
     
     # Check if postcondition is entirely within the positive region, or entirely negative.
@@ -194,7 +194,11 @@ def check_inclusion_pre_linear(postc : LinearPostcond, prec_m : ArrayLike, prec_
             lcex)
     
     # Return
-    return _pp_lcex(lcex)
+    log("\n\n ATTENTION : Returning {0} cex \n\n".format(len(lcex))) #DEBUG
+    if len(lcex) > 0:
+        return np.concatenate( [ c[np.newaxis, :] for c in lcex ] )
+    else:
+        return []
     
     
 

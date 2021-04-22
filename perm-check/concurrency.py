@@ -37,10 +37,11 @@ if USE_MP:
         
         
     def _worker(kern : Callable[..., Any], tq : JoinableQueue, rq : Queue, eq: Queue, 
-                exit_ev : Event, rp : float, pl: Lock):
+            exit_ev : Event, rp : float, pl: Lock, err_ev : Event):
         """
         Keep extracting elements from tq, call kern on contents, push return to rq. Quit if the
-        exit_ev has been set. Just before quitting, send a QuitMessage. Uses `eq` as an event queue
+        exit_ev has been set. Just before quitting, send a QuitMessage. Uses `eq` as an event queue.
+        Sets `err_ev` if the kernel produces any exception, and exits.
         """
         # Set up reference point for logging
         global ref_point, print_lock
@@ -77,6 +78,7 @@ if USE_MP:
                         print("\n\n")
                     finally:
                         print_lock.release()
+                    err_ev.set()
                     break
                 has_ret = True
             
@@ -132,6 +134,7 @@ if USE_MP:
     retn_q = None
     evnt_q = None
     exit_ev = None
+    err_ev = None
     workers = None
     print_lock = None
 
@@ -140,6 +143,14 @@ else:
     kernel = None
 
 ref_point = None
+
+
+def _exit_on_error():
+    # Checks if any worker has encountered an error, and if so, exits.
+    global err_ev
+    
+    if err_ev.is_set():
+        stop()
 
     
 def init(k : Callable[..., Any], 
@@ -151,7 +162,7 @@ def init(k : Callable[..., Any],
     ref_point = monotonic()
     
     if USE_MP:
-        global manager, task_q, retn_q, evnt_q, exit_ev, workers, print_lock
+        global manager, task_q, retn_q, evnt_q, exit_ev, workers, print_lock, err_ev
         
         ctx = get_context(method=start_method)
         manager = ctx.Manager()
@@ -159,12 +170,13 @@ def init(k : Callable[..., Any],
         retn_q = ctx.Queue()
         evnt_q = ctx.Queue()
         exit_ev = ctx.Event()
+        err_ev = ctx.Event()
         print_lock = ctx.Lock()
         
         
         workers = [ ctx.Process(    target = _worker, 
                                     args = (    k, task_q, retn_q, evnt_q, exit_ev, ref_point,
-                                                print_lock ),
+                                                print_lock, err_ev ),
                                     name = "WORKER {0}".format(i)
                                 ) for i in range(n_workers) ]
         
@@ -181,6 +193,8 @@ def start():
     """
     if not USE_MP:
         return
+    
+    _exit_on_error()
     
     global workers, evnt_q
     
@@ -202,7 +216,7 @@ def stop():
     """
     if not USE_MP:
         return
-    
+
     global exit_ev, evnt_q, task_q, retn_q, workers
     
     # Send stop message
@@ -241,6 +255,8 @@ def add_task(tsk):
     return queue instead.
     """
     if USE_MP:
+        _exit_on_error()
+        
         global task_q
         
         task_q.put(tsk)
@@ -257,6 +273,9 @@ def get_return(wait=True):
     is ignored, and None is returned if there is nothing to return
     """
     if USE_MP:
+
+        _exit_on_error()
+
         global retn_q
         
         try:
@@ -281,6 +300,8 @@ def wait_till_all_done():
     if not USE_MP:
         return
     
+    _exit_on_error()
+
     global task_q
     task_q.join()
 

@@ -215,7 +215,7 @@ def pull_back_constr_relu(ms: list[ArrayLike], bs: list[ArrayLike], point: Array
         assert m.ndim == 2
         assert b.ndim == 1
         assert m.shape[1] == b.shape[0]
-        assert m.shape[0] == b.shape[0]
+        assert m.shape[0] == point.shape[0]
     
     out_l = []
     

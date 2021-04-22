@@ -3,7 +3,7 @@ The entry point of the code, also handles multiprocess concurrency.
 """
 
 
-from enum import Enum
+from enum import Enum, unique
 from typing import Any
 
 import numpy as np
@@ -15,7 +15,7 @@ from precondition import DisLinearPrecond, pull_back_constr_relu, pull_back_prec
 from inclusion import check_inclusion_pre_linear, check_inclusion_pre_relu
 
 
-
+@unique
 class TaskMessage(Enum):
     """
     Records the kind of task messages that can be sent to a worker's kernel. Each message asks the
@@ -35,7 +35,7 @@ class TaskMessage(Enum):
                             # ReLU. Expects a LinearPostcond and a DisLinearPrecond
 
     
-    
+@unique
 class ReturnMessage(Enum):
     """
     The message passed when a task returns something. The message structure is (ReturnMessage,
@@ -43,13 +43,13 @@ class ReturnMessage(Enum):
     """
     PUSH_F_LINEAR_DONE  = 0     # Pushforward across linear layer has completed. Contains postcond
                                 # on other side
-    PUSH_F_RELU_DONE    = 0     # Pushforward across ReLU layer has completed. Contains postcond on
+    PUSH_F_RELU_DONE    = 1     # Pushforward across ReLU layer has completed. Contains postcond on
                                 # other side
-    PULL_B_LINEAR_DONE  = 1     # Pullback across linear layer done. Contains an lp as (m,b) pair.
-    PULL_B_RELU_DONE    = 1     # Pullback across ReLU done. Contains a DisLinearPrecond, or none
-    ICHK_PRELIN_DONE    = 2     # Checking inclusion at position before a linear layer is done.
+    PULL_B_LINEAR_DONE  = 2     # Pullback across linear layer done. Contains an lp as (m,b) pair.
+    PULL_B_RELU_DONE    = 3     # Pullback across ReLU done. Contains a DisLinearPrecond, or none
+    ICHK_PRELIN_DONE    = 4     # Checking inclusion at position before a linear layer is done.
                                 # Contains a list of counterexamples.
-    ICHK_PREREL_DONE    = 2     # Checking inclusion at position before a relu layer is done.
+    ICHK_PREREL_DONE    = 5     # Checking inclusion at position before a relu layer is done.
                                 # Contains a list of counterexamples.
 
 
@@ -68,21 +68,22 @@ class PermCheckReturnStruct:
 
     Members:
     
-    kind            -   The kind of return that happened, proof, cex or inconclusive
+    kind                -   The kind of return that happened, proof, cex or inconclusive
     
     If the kind is 'proof', the follwing are present:
     
-    postconds       -   A list of postconditions leading up to the layer where inclusion was found
-    pre_relu_pconds,-   A list of preconditions from the layer where the inclusion was found
-    post_relu_pconds
-    incl_layer      -   The layer at which the inclusion was found
+    postconds           -   A list of postconditions leading up to the layer where inclusion was
+                            found
+    pre_relu_pconds,    -   A list of preconditions from the layer where the inclusion was found
+    pre_linear_pconds
+    incl_layer          -   The layer at which the inclusion was found
     
     If the kind is 'counterexample', the following are present:
     
-    counterexamples -   A list of counterexamples. Each counterexample should be a 5-tuple: the
-                        input, the permuted input, the output produced, the output permuted
-                        according to the output permutation and the ouput produced from the
-                        permuted input.
+    counterexamples     -   A list of counterexamples. Each counterexample should be a 5-tuple: the
+                            input, the permuted input, the output produced, the output permuted
+                            according to the output permutation and the ouput produced from the
+                            permuted input.
     """
     def __init__(self, kind : PermCheckReturnKind, *args):
         """
@@ -91,7 +92,7 @@ class PermCheckReturnStruct:
         self.kind = kind
         
         if self.kind == PermCheckReturnKind.PROOF:
-            self.postconds, self.pre_relu_pconds, self.post_relu_pconds, self.incl_layer = args
+            self.postconds, self.pre_relu_pconds, self.pre_linear_pconds, self.incl_layer = args
             
         elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
             self.counterexamples = args[0]
@@ -161,7 +162,7 @@ class PermCheckReturnStruct:
                 s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis, self.postconds[2*l+1].center)
                 
                 # Print precondition
-                pm, pb = prec.get_pos_constrs()
+                pm, pb = prlu_pcs[0].get_pos_constrs()
                 s += "\nEach of which satisfy:\n"
                 s += "x @ {0} <= {1}\n".format(pm, pb)
                 r = prec.get_neg_constrs()
@@ -239,7 +240,7 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
         ret = pull_back_constr_relu([ms], [bs], centr)
         log("Pullback done")
         log("Returning {0} from outlp".format(ret)) #DEBUG
-        return ReturnMessage.PULL_B_RELU_DONE, layer, ( ret[0] if len(ret) > 0 else None)
+        return ReturnMessage.PULL_B_RELU_DONE, layer, ( ret[0] if len(ret) > 0 else None )
                                                 # Return first precond, TODO refine
     
     # Pull back precond over linear layer
@@ -248,13 +249,13 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
         log("Pulling back over linear layer {0}".format(layer))
         ms, bs = pull_back_precond_linear(prec, weights, bias)
         log("Pullback done")
-        log("Returning {0}".format(ret)) #DEBUG
         return ReturnMessage.PULL_B_LINEAR_DONE, layer, (ms[0], bs[0]) # Choose positive, TODO refine
 
     # Inclusion check just before ReLU
     elif task_id == TaskMessage.ICHK_PRE_RELU:
         postc, prec = args
         log("Cheking inclusion at {0} before the ReLU".format(layer))
+        log("Postcond {0}, precond {1}".format(postc, prec))
         cexes = check_inclusion_pre_relu( postc, prec )
         log("Done checking inclusion, found {0} cexex".format(len(cexes)))
         return ReturnMessage.ICHK_PREREL_DONE, layer, cexes
@@ -263,6 +264,7 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
     elif task_id == TaskMessage.ICHK_PRE_LINEAR:
         postc, m, b = args
         log("Cheking inclusion at {0} before the ReLU".format(layer))
+        log("Postcond {0}, m {1}, b{2}".format(postc, m, b))
         cexes = check_inclusion_pre_linear( postc, m, b )
         log("Done checking inclusion, found {0} cexex".format(len(cexes)))
         return ReturnMessage.ICHK_PRELIN_DONE, layer, cexes
@@ -355,7 +357,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     inp_c = np.concatenate((cen, cen[pre_perm]))
     inp_b = np.block([ np.eye(n_inputs), np.zeros((n_inputs, n_inputs)) ])
     for i, p in enumerate(pre_perm):        # Permutations
-        inp_b[i, n_inputs + p] = -1
+        inp_b[i, n_inputs + p] = 1
     inp_b *= brn[np.newaxis, :]             # Scale to fill bounds
     log("Inp_c: {0}".format(inp_c.shape))
     postconds[0] = LinearPostcond(inp_b, inp_c)
@@ -391,7 +393,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     pf_remaining = True         # Is pushforwards all done?
     pb_remaining = True         # Is pullbacks all done
     n_incl_check = 0            # Number of inclusion checks performed
-    while pf_remaining or pb_remaining or n_incl_check < n_layers:
+    while pf_remaining or pb_remaining or n_incl_check < n_pos:
         
         # Get returned message
         msg, layer, *data = get_return(wait=True)
@@ -429,8 +431,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             
             # If we also have a precondtion, schedule an inclusion check
             if pre_linear_pconds[layer+1] is not None:
-                add_task( (TaskMessage.ICHK_PRE_LINEAR, layer+1, postconds[pcidx],
-                            pre_linear_pconds[layer+1]) )
+                m, b = pre_linear_pconds[layer+1]
+                add_task( (TaskMessage.ICHK_PRE_LINEAR, layer+1, postconds[pcidx], m, b) )
 
             # Terminate if no further pushforward possible
             if pcidx+1 >= n_pos:       
@@ -476,7 +478,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             pre_linear_pconds[layer] = data[0]      # For now, just pick the first precond produced
             
             log("Added pre-linear precond {0}".format(data[0]))   # DEBUG
-            log("Layer {0} has pre-linear precond of dim {1}".format(layer-1, data[0].num_neuron))
+            log("Layer {0} has pre-linear precond of shape {1}, center is {2}".format(layer-1,
+                                                    data[0][0].shape, centers[layer*2].shape))
 
             # If we also have a precondtion, schedule an inclusion check
             if postconds[2*layer] is not None:
@@ -491,21 +494,40 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             
             # Schedule next pullback
             log("Scheuling pullback across relu layer {0}".format(layer-1))
-            add_task( (TaskMessage.PULL_B_RELU, layer, data[0][0], data[0][1], center[(layer-1)*2]) )
+            add_task( (TaskMessage.PULL_B_RELU, layer, data[0][0], data[0][1], centers[layer*2]) )
            
             
         # If the inclusion check is done, quit if successfull, or try to pull back cex TODO cex pb
-        elif msg == ReturnMessage.ICHK_PRELIN_DONE or msg == ReturnMessage.ICHK_PREREL_DONE:
+        elif msg == ReturnMessage.ICHK_PRELIN_DONE:
             
             cexes = data[0]
             
             # Quit out and return if there are no cexes.
             if len(cexes) == 0:  
-                log("Found proof via inclusion at layer {0}".format(layer))
+                log("Found proof via inclusion just before layer {0}".format(layer))
                 stop()
                 return PermCheckReturnStruct( PermCheckReturnKind.PROOF, 
-                        inp_b, inp_c, postconds[:layer+1], out_lp_m, out_lp_b, preconds[layer:],
+                        postconds[:2*layer+1], pre_relu_pconds[layer:], pre_linear_pconds[layer:],
                         layer)
+            
+            n_incl_check += 1
+            
+            log("No inclusion at layer {0}, found {2} cexes, checked {1} layers".format(
+                        layer, n_incl_check, len(cexes)))
+            
+            
+        # If the inclusion check is done, quit if successfull, or try to pull back cex TODO cex pb
+        elif msg == ReturnMessage.ICHK_PREREL_DONE:
+            
+            cexes = data[0]
+            
+            # Quit out and return if there are no cexes.
+            if len(cexes) == 0:  
+                log("Found proof via inclusion just before ReLU layer {0}".format(layer))
+                stop()
+                return PermCheckReturnStruct( PermCheckReturnKind.PROOF, 
+                        postconds[:(layer+1)*2], pre_relu_pconds[layer:],
+                        pre_linear_pconds[layer+1:], layer)
             
             n_incl_check += 1
             
