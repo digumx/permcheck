@@ -10,6 +10,7 @@ from math import exp
 import numpy as np
 from numpy.random import rand
 from numpy.typing import ArrayLike
+from scipy.optimize import linprog
 from scipy.linalg import lstsq, null_space
 
 from postcondition import LinearPostcond
@@ -94,8 +95,85 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
         ret.append(proj_p)
     
     return ret
+
+
+def pullback_cex_linear( cex : ArrayLike, postc : LinearPostcond, weights : ArrayLike, 
+                        bias : ArrayLike ) -> Union[ ArrayLike, None ] :
+    """
+    Pulls back a given counterexample over a linear layer using a linear program call. Returns a CEX
+    point if found, else returns none
+    """
+    # TODO remove
+    assert cex.ndim == 1
+    assert weignts.ndim == 2
+    assert bias.ndim == 1
+    assert bias.shape[0] == weights.shape[1]
+    assert cex.shape[0] == weights.shape[1]
+    assert postc.num_neuron == weights.shape[0]
     
-            
+    # Run linear program
+    res = linprog(c = 0, A_ub = None, B_ub = None, 
+                    A_eq = np.transpose( postc.basis @ weights ), 
+                    b_eq = cex - bias - postc.center @ weights,
+                    bounds = (-1, 1),
+                    method = SCIPY_LINPROG_METHOD )
+    
+    # Analyze result
+    if res.status == 0:
+        log("Pullback across linear layer successful")
+        return res.x @ postc.basis + postc.center
+
+    elif res.status == 1 or res.status == 2:
+        log("Pullback failed, preimage of point does not intersect postcondition")
+        return None
+    
+    else:
+        raise RuntimeError("Unexpected return status from linear solver: {0}".format(res.status))
+
+    
+def cex_pullback_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLike, None ]:
+    """
+    Pulls a counterexample back over a ReLU layer into a given linear postcondition. Returns a point
+    if it is found, else returns None.
+    """
+    assert cex.ndim == 1
+    assert postc.num_neuron == cex.shape[0]
+    
+    # Early exit if not in positive quadrant
+    if np.any( cex < -FLOAT_ATOL ):
+        log("Cex not in positive quadrant, cannot pull back over ReLU")
+        return None
+    
+    # Get LP for inverse image of point under ReLU and lift it to alpha space
+    proj = np.eye(postc.num_neuron)[ :, np.where(cex > FLOAT_ATOL) ]
+    A_eq = np.transpose( postc.basis @ proj)
+    b_eq = (cex - postc.center) @ proj
+    
+    # Get quadrant bounds for inverse image
+    if np.all( cex > FLOAT_ATOL)        # No bounds
+        A_ub = b_ub = None
+    else:
+        pos = np.eye(postc.num_neuron)[ :, np.where(cex <= FLOAT_ATOL) ]
+        A_ub = np.transpose( postc.basis @ pos )
+        b_ub = postc.center @ pos
+    
+    # Run linear program
+    res = linprog(c = 0, A_ub, B_ub, A_eq, b_eq,
+                    bounds = (-1, 1),
+                    method = SCIPY_LINPROG_METHOD )
+    
+    # Analyze result
+    if res.status == 0:
+        log("Pullback across relu layer successful")
+        return res.x @ postc.basis + postc.center
+
+    elif res.status == 1 or res.status == 2:
+        log("Pullback failed, preimage of point does not intersect postcondition")
+        return None
+    
+    else:
+        raise RuntimeError("Unexpected return status from linear solver: {0}".format(res.status))
+    
 
 
 if __name__ == "__main__":

@@ -200,8 +200,8 @@ class DisLinearPrecond:
    
    
    
-def pull_back_constr_relu(ms: ArrayLike, bs: ArrayLike, point: ArrayLike, 
-                            axtols: ArrayLike = np.array(0)) -> Union[DisLinearPrecond, None]:
+def pull_back_constr_relu(ms: list[ArrayLike], bs: list[ArrayLike], point: ArrayLike, 
+                            axtols: ArrayLike = np.array(0)) -> list[DisLinearPrecond]:
     """
     Given a list of constraints for the positive region and a point, return a list precondition pulling
     the positive region back over relu, making sure the given point is contained in the returned
@@ -209,6 +209,13 @@ def pull_back_constr_relu(ms: ArrayLike, bs: ArrayLike, point: ArrayLike,
     returned postcondition does not have any negative side behavior. May return an empty list if no
     appropriate preconditions are found.
     """
+    # TODO remove
+    assert point.ndim == 1
+    for m, b in zip(ms, bs):
+        assert m.ndim == 2
+        assert b.ndim == 1
+        assert m.shape[1] == b.shape[0]
+        assert m.shape[0] == b.shape[0]
     
     out_l = []
     
@@ -239,21 +246,15 @@ def pull_back_constr_relu(ms: ArrayLike, bs: ArrayLike, point: ArrayLike,
     return out_l
 
 
-def pull_back_precond(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayLike, 
-                        point: ArrayLike, axtols: ArrayLike = np.array(0)) -> list[DisLinearPrecond]:
+def pull_back_precond_linear(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayLike 
+                                                ) -> tuple[list[ArrayLike], list[ArrayLike]]:
     """
-    Assuming the given precondition involves the values output from the linear transform of layer i
-    and inputting into the relu of layer i, returns a list of suitable preconditions involving the
-    input to the relu at layer i-1. All the returned preconditions contain the given point. The
-    point must be a valid point in the input space of the relu of the i-1 layer. The returned list
-    may be empty if no suitable precondition is found. A coordinate of point is considered positive
-    only if it is greater than the corresponding coordinate of the given `axtols`. 
+    Pulls back given DisLinearPrecond across a linear layer, and returns a lit of lps. Each lp is
+    given by x @ m <= b, and the list of ms and bs are returned.
     """
     # TODO remove
-    assert point.ndim == 1
     assert biases.ndim == 1
     assert weights.ndim == 2
-    assert weights.shape[0] == point.shape[0]
     assert weights.shape[1] == biases.shape[0]
     assert weights.shape[1] == prec.num_neuron
     
@@ -274,7 +275,7 @@ def pull_back_precond(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayL
         ms[i] = weights @ ms[i]
     
     # Pull back over relu and return
-    return pull_back_constr_relu(ms, bs, point, axtols = axtols)
+    return ms, bs
     
 
 if __name__ == "__main__":  #DEBUG

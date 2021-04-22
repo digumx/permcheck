@@ -86,9 +86,11 @@ FLOAT_ATOL = 1e-8
 If set tu true, when postconditions are pushed forward, redundant generating vectors are discarded
 and only a minimal basis is maintained. This reduces the number of vectors to keep track of and
 improves performance of future push forwards and inclusion checks, but introduces unreachable
-behavior and weakens the postcondition.
+behavior and weakens the postcondition. We have two seperate flags for the pushforward through the
+linear and relu layers respectively.
 """
-REDUCE_POSTCOND_BASIS = True
+REDUCE_POSTCOND_BASIS_LINEAR = True
+REDUCE_POSTCOND_BASIS_RELU = False
 
 
 

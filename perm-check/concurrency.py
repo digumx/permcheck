@@ -15,6 +15,9 @@ if USE_MP:
     from multiprocessing import get_context, current_process
     from multiprocessing import Queue, JoinableQueue, Event, Manager, Lock
     from queue import Empty, Full
+    from traceback import print_exc
+    import os
+    import signal
 
 if USE_MP:
     from global_consts import MP_NUM_WORKER, MP_START_METHOD
@@ -63,7 +66,18 @@ if USE_MP:
                 log("Task recieved") #DEBUG
                 
                 # Perform task:
-                ret = kern(*tsk)
+                try:
+                    ret = kern(*tsk)
+                except:
+                    print_lock.acquire()
+                    try:
+                        print("\n\nUnhandled exception in worker {0} \n\n".format(
+                                                                    current_process().name))
+                        print_exc()
+                        print("\n\n")
+                    finally:
+                        print_lock.release()
+                    break
                 has_ret = True
             
             # Push return

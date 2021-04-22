@@ -13,7 +13,7 @@ from scipy.linalg import null_space
 
 from postcondition import LinearPostcond
 from precondition import DisLinearPrecond, NegSideType
-from global_consts import REDUCE_POSTCOND_BASIS, FLOAT_RTOL, FLOAT_ATOL, SCIPY_LINPROG_METHOD
+from global_consts import FLOAT_RTOL, FLOAT_ATOL, SCIPY_LINPROG_METHOD
 from concurrency import log
 
 
@@ -58,27 +58,27 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
     log(f"Lp check leaves with {len(l_cex)} cexes")
 
 
+    
+def _pp_lcex(lcex):     # Post processign for lcex before return TODO Remove duplicates
+    if len(lcex) > 0:
+        return np.concatenate( [ c[np.newaxis, :] for c in lcex ], axis=0) @ postc.basis +\
+                        postc.center
+    else:
+        return []
+    
 
-def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1) \
+def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1) \
                     -> list[ArrayLike]:
     """
-    Check if given postcondition `postc` is included within the precondition `prec`. Returns a list
-    of upto `n_cex` counterxamples with no repetitions, or an empty list if inclusion is satisified.
-    Note returned list may contain duplicate elements.
+    Check if given postcondition `postc` is included within the precondition `prec`, both being at a
+    position just before a relu layer and just after a linear layer. Returns a list of upto `n_cex`
+    counterxamples, or an empty list if inclusion is satisified.  Note returned list may contain
+    duplicate elements.
     """
     assert postc.num_neuron == prec.num_neuron
    
     lcex = []
     
-    
-    def _pp_lcex(lcex):     # Post processign for lcex before return
-        if len(lcex) > 0:
-            return np.concatenate( [ c[np.newaxis, :] for c in lcex ], axis=0) @ postc.basis +\
-                            postc.center
-        else:
-            return []
-        
-        
     # Check if postcondition is entirely within the positive region, or entirely negative.
     axvar = np.sum( np.absolute( postc.basis ), axis = 0 )  # Ub - Lb per axis
     axub = postc.center + axvar                             # Upper bounds per axis
@@ -173,6 +173,30 @@ def check_inclusion( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int 
         
         
     return _pp_lcex(lcex)
+
+
+def check_inclusion_pre_linear(postc : LinearPostcond, prec_m : ArrayLike, prec_b : ArrayLike,
+                                n_cex : int = 1) -> list[ ArrayLike ] :
+    """
+    Checks if the given postcondition positioned after the relu is contained in the precondition
+    given by the LP x @ prec_m <= prec_b.
+    """
+    # Lift the LP region to alpha
+    p_reg_m = np.transpose(postc.basis @ prec_m)
+    p_reg_b = prec_b - postc.center @ prec_m
+    
+    # Lift the positivity conditions for each axis to alpha space.
+    pos_per_ax_m, pos_per_ax_b = -np.transpose(postc.basis), np.copy(postc.center)
+    
+    # Do the LP inclusion check
+    lcex = []
+    check_lp_inclusion(pos_per_ax_m, pos_per_ax_b, None, None, p_reg_m, p_reg_b, (-1, 1), n_cex,
+            lcex)
+    
+    # Return
+    return _pp_lcex(lcex)
+    
+    
 
 
 if __name__ == "__main__":

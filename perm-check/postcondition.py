@@ -10,7 +10,8 @@ from numpy.typing import ArrayLike
 from scipy.optimize import linprog
 from scipy.linalg import svd
 
-from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL, REDUCE_POSTCOND_BASIS
+from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL
+from global_consts import REDUCE_POSTCOND_BASIS_LINEAR, REDUCE_POSTCOND_BASIS_RELU
 from utils import check_parallel
 from concurrency import log, init
 
@@ -65,6 +66,8 @@ class LinearPostcond:
         # Fill in the perpendicular space
         self.perp_basis = perp_basis
         
+    def __repr__(self):
+        return repr(self.packed_mat)
 
 
 def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
@@ -102,10 +105,11 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
 
     
 
-def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, ArrayLike]:
+def push_forward_postcond_relu(left_cond: LinearPostcond,
+                                optimize_basis : bool = REDUCE_POSTCOND_BASIS_RELU) -> LinearPostcond:
     """
-    Pushes forward a `LinearPostcond` across a relu via tie class analysis. Returns the pair (basis,
-    center) for the postcondition on the right side of the relu
+    Pushes forward a `LinearPostcond` across a relu via tie class analysis. Returns a LinearPostcond
+    for the right side of the ReLU. If `optimize_basis is true
     """
 
     # First, we use tie class analysis to build a list of basis vectors for each class.
@@ -190,33 +194,34 @@ def push_forward_postcond_relu(left_cond: LinearPostcond) -> tuple[ArrayLike, Ar
     log("Center after relu: {0}".format(center)) #DEBUG
     log("Basis after relu: {0}".format(basis)) #DEBUG
     
-    return basis, center
+    # Reduce basis if flag set
+    if optimize_postcond_basis:
+        b, p = optimize_postcond_basis(basis)
+        return LinearPostcond(b, center, perp_basis=p)
+    
+    return LinearPostcond(basis, center)
 
 
-def push_forward_postcond(postc: LinearPostcond, weights: ArrayLike, bias: ArrayLike) \
-                                                                            -> LinearPostcond:
+def push_forward_postcond_linear(postc: LinearPostcond, weights: ArrayLike, bias: ArrayLike,
+                                optimize_basis = REDUCE_POSTCOND_BASIS_LINEAR) -> LinearPostcond:
     """
-    Push forward a linear postcondition across a layer of a Neural Network. Assuming the given
-    postcondition to be on the values entering the relu of the i-th layer, returns a postcondition
-    on the values entering the relu of the (i+1)-th layer. The arguments are:
+    Push forward a linear postcondition across a linear layer layer of a Neural Network. The
+    arguments are:
     
-    0.  postc   -   The postcondition before the relu of the of the i-th layer.
-    1.  weights -   The weights of the (i+1)-th layer's linear transform
-    2.  biases  -   The biases of the (i+1)-th layer's linear transform
+    0.  postc                   -   The postcondition before the relu of the of the i-th layer.
+    1.  weights                 -   The weights of the (i+1)-th layer's linear transform
+    2.  biases                  -   The biases of the (i+1)-th layer's linear transform
+    3.  optimize_postcond_basis -   If true, optimizes the basis of the returned postcondition
     """
-    
-    # Push forward across relu
-    basis, center = push_forward_postcond_relu(postc)
-    
     # Push forward across linear layer.
-    post_spn = basis @ weights
-    post_center = center @ weights + bias
+    post_spn = postc.basis @ weights
+    post_center = postc.center @ weights + bias
     
     log("center {0}, post_center {1}, basis {2}, post_spn {3}, weights {4}, bias {5}".format(
-                            center, post_center, basis, post_spn, weights, bias)) #DEBUG
+                            postc.center, post_center, postc.basis, post_spn, weights, bias)) #DEBUG
     
     # Optimise span to basis
-    if REDUCE_POSTCOND_BASIS:
+    if optimize_basis:
         post_basis, perp_basis = optimize_postcond_basis(post_spn)
         log("Optimized basis {0}".format(post_basis))
         return LinearPostcond(post_basis, post_center, perp_basis = perp_basis)
