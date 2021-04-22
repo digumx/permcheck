@@ -181,7 +181,7 @@ class PermCheckReturnStruct:
                 
                 # Print the pre-linear precond
                 m, b = plin
-                s += "Each of which give values before the linear layer {0} that satisfy:\n".format(l)
+                s += "\nEach of which give values before the linear layer {0} that satisfy:\n".format(l)
                 s += "x @ {0} <= {1}\n".format(m, b)
                 
                 # Print the pre-relu precond
@@ -199,7 +199,7 @@ class PermCheckReturnStruct:
 
             # Print the output condition
             m, b = self.pre_linear_pconds[-1]
-            s += "Each of which give values before the linear layer {0} that satisfy:\n".format(l)
+            s += "\nEach of which give values before the linear layer {0} that satisfy:\n".format(l)
             s += "x @ {0} <= {1}\n".format(m, b)
             
             s += "\nWhich characterizes the output condition"
@@ -557,7 +557,7 @@ if __name__ == "__main__":
     biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
     sig = [1, 0]
     ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1)
-    print("Returned {1}: {0}".format(str(ret), ret.kind.value))
+    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
     
-    print("Details:")
+    print("\n\nDetails:\n\n")
     print(repr(ret))
