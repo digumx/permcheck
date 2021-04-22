@@ -13,6 +13,7 @@ from concurrency import init, start, stop, add_task, get_return, log
 from postcondition import LinearPostcond, push_forward_postcond_linear, push_forward_postcond_relu
 from precondition import DisLinearPrecond, pull_back_constr_relu, pull_back_precond_linear
 from inclusion import check_inclusion_pre_linear, check_inclusion_pre_relu
+from global_consts import MP_NUM_WORKER
 
 
 @unique
@@ -277,7 +278,8 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
 
 def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             pre_perm : list[int], pre_lb : ArrayLike, pre_ub : ArrayLike,
-            post_perm : list[int], post_epsilon : float) -> None:
+            post_perm : list[int], post_epsilon : float,
+            num_workers : int = MP_NUM_WORKER ) -> None:
     """
     The main method.
     
@@ -304,10 +306,11 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     pre_ub, pre_lb      -   The upper and lower bounds within which the input may lie, both are
                             ArrayLikes
     post_epsilon        -   The tolerance for being the output being within the permutation
+    num_workers         -   The number of worker processes to pass
     """
     
     # Initialize workers
-    init(kernel)
+    init(kernel, n_workers = num_workers)
 
 
     # Common vars
@@ -551,13 +554,21 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     
 if __name__ == "__main__":
 
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Usage: `python main.py <number_of_worker_processes>`")
+        exit(-1)
+    
     weights = [ np.array(   [[1000, -1000, 1000, -1000],
                              [-1000, 1000, -1000, 1000]] ),
                 np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
     biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
     sig = [1, 0]
-    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1)
-    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
     
+    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1,
+                num_workers = int(sys.argv[1]))
+    
+    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
     print("\n\nDetails:\n\n")
     print(repr(ret))
