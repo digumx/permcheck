@@ -10,5 +10,12 @@ Additionally, the following python libraries are needed to run the code:
 
 # Running:
 
-Currently, the `perm-check/postcondition.py` file can be run. This will run both the methods on some
-randomly generated data, and will print out the time each took.
+Currently, the `main.py` file can be run with a fixed simple example. To run the code, use the
+command from within the `perm_check` directory:
+
+```
+python main.py <num_workers>
+```
+
+Where `num_workers` is the number of child worker processes that are spawned to run the code. Must
+be atleast `1`. Recommended: number of cores in system - 2.
