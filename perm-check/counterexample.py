@@ -131,7 +131,7 @@ def pullback_cex_linear( cex : ArrayLike, postc : LinearPostcond, weights : Arra
         raise RuntimeError("Unexpected return status from linear solver: {0}".format(res.status))
 
     
-def cex_pullback_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLike, None ]:
+def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLike, None ]:
     """
     Pulls a counterexample back over a ReLU layer into a given linear postcondition. Returns a point
     if it is found, else returns None.
@@ -150,7 +150,7 @@ def cex_pullback_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
     b_eq = (cex - postc.center) @ proj
     
     # Get quadrant bounds for inverse image
-    if np.all( cex > FLOAT_ATOL)        # No bounds
+    if np.all( cex > FLOAT_ATOL):       # No bounds
         A_ub = b_ub = None
     else:
         pos = np.eye(postc.num_neuron)[ :, np.where(cex <= FLOAT_ATOL) ]
@@ -158,7 +158,7 @@ def cex_pullback_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
         b_ub = postc.center @ pos
     
     # Run linear program
-    res = linprog(c = 0, A_ub, B_ub, A_eq, b_eq,
+    res = linprog(0, A_ub, B_ub, A_eq, b_eq,
                     bounds = (-1, 1),
                     method = SCIPY_LINPROG_METHOD )
     

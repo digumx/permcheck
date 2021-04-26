@@ -125,6 +125,12 @@ A multiplier for the number of random samples to pick from the space of alpha va
 CEX_PULLBACK_SAMPLES_SCALE = 100
 
 """
-The number of candidate pullbacks to return
+The default number of candidate pullbacks to return per layer. TODO Basically not used 
 """
-CEX_PULLBACK_NUM_PULLBACKS = 10
+CEX_PULLBACK_NUM_PULLBACKS = 5
+
+"""
+The default multiplier for the number of cexes candidates to check when inclusion fails. The actual
+number is calculated as this times the number of neurons in the DNN.
+"""
+CEX_PULLBACK_NUM_TOTAL_CANDIDATES_MULT = 20

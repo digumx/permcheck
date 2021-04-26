@@ -67,7 +67,8 @@ class LinearPostcond:
         self.perp_basis = perp_basis
         
     def __repr__(self):
-        return repr(self.packed_mat)
+        return "LinearPostcond( packed_mat = {0}, perp_basis = {1}, num_neuron = {2} )".format(
+                repr(self.packed_mat), repr(self.perp_basis), repr(self.num_neuron))
 
 
 def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
