@@ -338,15 +338,15 @@ def check_cex( cex, weights, bias, out_lp_m, out_lp_b ):
     """
     x = np.copy(cex)
     
-    log("Checking cex {0}".format(x)) #DEBUG
+    #log("Checking cex {0}".format(x)) #DEBUG
     
     for w, b in zip(weights, bias):
-        log("w {0} b {0}".format(w, b)) #DEBUG
+        #log("w {0} b {0}".format(w, b)) #DEBUG
         x = x @ w
         x = x + b
         x[ np.where( x < 0 ) ] = 0
         
-    log("Final x {0}".format(x))
+    #log("Final x {0}".format(x)) #DEBUG
     
     return x if np.any( x @ out_lp_m > out_lp_b ) else None
 
@@ -668,7 +668,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 
                 # Schedule pullback for each returned counterexample
                 else:
-                    log("Postconds {0}".format(postconds)) #DEBUG
+                    #log("Postconds {0}".format(postconds)) #DEBUG
                     for cex in cexes:
                         log("Scheduling pullback of cex candidate across combined layer")
                         add_task(( TaskMessage.CEX_PB_LAYER, layer, cex, postconds[layer * 2 - 1],

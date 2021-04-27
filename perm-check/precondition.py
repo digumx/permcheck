@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from global_consts import FLOAT_ATOL
-from concurrency import log
+from concurrency import log, init
 
 
 class NegSideType(Enum):
@@ -125,8 +125,8 @@ class DisLinearPrecond:
         """
         d = {}
         
-        d['pos_m'] = self.pos_m.tolist()
-        d['pos_b'] = self.pos_b.tolist()
+        d['pos_m'] = repr(self.pos_m)
+        d['pos_b'] = repr(self.pos_b)
         d['n'] = self.num_neuron
         
         if self.neg_side_type == NegSideType.NONE:
@@ -134,14 +134,14 @@ class DisLinearPrecond:
         
         elif self.neg_side_type == NegSideType.ZERO:
             d['neg_side_type'] = 'ZERO'
-            d['zer_i'] = self.zer_i.tolist()
-            d['zer_b'] = self.zer_b.tolist()
+            d['zer_i'] = repr(self.zer_i)
+            d['zer_b'] = repr(self.zer_b)
         
         elif self.neg_side_type == NegSideType.QUAD:
             d['neg_side_type'] = 'QUAD'
-            d['neg_m'] = self.neg_m.tolist()
-            d['neg_b'] = self.neg_b.tolist()
-            d['neg_side_quad'] = self.neg_side_quad.tolist()
+            d['neg_m'] = repr(self.neg_m)
+            d['neg_b'] = repr(self.neg_b)
+            d['neg_side_quad'] = repr(self.neg_side_quad)
         else:
             assert False
             
@@ -285,7 +285,7 @@ if __name__ == "__main__":  #DEBUG
     import sys
     
     from debug import rand_sparce_matrix, rand_sparce_pos_matrix
-    
+
 
     n = 200         # Number of neurons in prev layer
     m = 160         # " "               in current layer
@@ -304,39 +304,76 @@ if __name__ == "__main__":  #DEBUG
     n_zero = 0
     n_quad = 0
     
-    def fail_dump():
-        global n, k, basis, center, tc1, tc2
-        # Dump basis, center and tie classes found to log if methods do not match.
-        data = {}
-        data['weights'] = weights.tolist()
-        data['bias'] = bias.tolist()
-        data['mat'] = mat.tolist()
-        data['bnd'] = bnd.tolist()
-        data['pt'] = pt.tolist()
-        with open(sys.argv[1], 'w') as log:
-            log.write(str(data))
+    if sys.argv[1] == "unit":
+
+        if sys.argv[2] == "1":
+            
+            m = np.array([  [1, 0, -1, 0],
+                            [0, 1, 0, -1],
+                            [0, -1, 0, 1],
+                            [-1, 0, 1, 0]])
+            b = np.array([ 0.1, 0.1, 0.1, 0.1 ])
+            p = np.array([0, 0, 0, 0])
+            
+            print(f"Return: {pull_back_constr_relu([m], [b], p)}")
         
-    def run_pb():
-        global mat, bnd, pt, weights, bias, n_succ, n_none, n_zero, n_quad
-        log("Running pullback")
-        ret = pull_back_precond(DisLinearPrecond(mat, bnd), weights, bias, pt)
-        n_succ += len(ret)
-        for r in ret:
-            if r.neg_side_type == NegSideType.NONE:
-                n_none += 1
-            elif r.neg_side_type == NegSideType.ZERO:
-                n_zer += 1
-            elif r.neg_side_type == NegSideType.QUAD:
-                n_quad += 1
+    elif sys.argv[1] == "fuzz":
     
-    if len(sys.argv) >= 3 and sys.argv[2] == "checklog":
-        with open(sys.argv[1]) as log:
-            data = eval(log.read())
-            weights = np.array(data['weights'])
-            bias = np.array(data['bias'])
-            mat = np.array(data['mat'])
-            bnd = np.array(data['bnd'])
-            pt = np.array(data['pt'])
+        def fail_dump():
+            global n, k, basis, center, tc1, tc2
+            # Dump basis, center and tie classes found to log if methods do not match.
+            data = {}
+            data['weights'] = weights.tolist()
+            data['bias'] = bias.tolist()
+            data['mat'] = mat.tolist()
+            data['bnd'] = bnd.tolist()
+            data['pt'] = pt.tolist()
+            with open(sys.argv[2], 'w') as log:
+                log.write(str(data))
+            
+        def run_pb():
+            global mat, bnd, pt, weights, bias, n_succ, n_none, n_zero, n_quad
+            log("Running pullback")
+            ret = pull_back_precond(DisLinearPrecond(mat, bnd), weights, bias, pt)
+            n_succ += len(ret)
+            for r in ret:
+                if r.neg_side_type == NegSideType.NONE:
+                    n_none += 1
+                elif r.neg_side_type == NegSideType.ZERO:
+                    n_zer += 1
+                elif r.neg_side_type == NegSideType.QUAD:
+                    n_quad += 1
+        
+        if len(sys.argv) >= 4 and sys.argv[3] == "checklog":
+            with open(sys.argv[2]) as log:
+                data = eval(log.read())
+                weights = np.array(data['weights'])
+                bias = np.array(data['bias'])
+                mat = np.array(data['mat'])
+                bnd = np.array(data['bnd'])
+                pt = np.array(data['pt'])
+                
+                log("Running pullback")
+                try:
+                    t += timeit(run_pb, number=1)
+                except Exception as e:
+                    fail_dump()
+                    raise e
+                
+                exit()
+                
+        
+        for i in range(n_run):
+            log(f"Run {i} of {n_run}")
+
+            log("Generating data")
+            mat = rand_sparce_matrix(m,k,2*p0)
+            pt = (np.random.rand(n) - 0.5) * poivar
+            weights = rand_sparce_pos_matrix(n,m,p0)
+            bias = (np.random.rand(m) - 0.5) * biavar
+            p_ = np.copy(pt)
+            p_[ np.where(p_ < 0) ] = 0
+            bnd = (p_ @ weights + bias) @ mat + 1
             
             log("Running pullback")
             try:
@@ -344,30 +381,8 @@ if __name__ == "__main__":  #DEBUG
             except Exception as e:
                 fail_dump()
                 raise e
-            
-            exit()
-            
-    
-    for i in range(n_run):
-        log(f"Run {i} of {n_run}")
 
-        log("Generating data")
-        mat = rand_sparce_matrix(m,k,2*p0)
-        pt = (np.random.rand(n) - 0.5) * poivar
-        weights = rand_sparce_pos_matrix(n,m,p0)
-        bias = (np.random.rand(m) - 0.5) * biavar
-        p_ = np.copy(pt)
-        p_[ np.where(p_ < 0) ] = 0
-        bnd = (p_ @ weights + bias) @ mat + 1
-        
-        log("Running pullback")
-        try:
-            t += timeit(run_pb, number=1)
-        except Exception as e:
-            fail_dump()
-            raise e
-
-    t /= n_run
-    log(f"The average time for pullback is {t}")
-    log(f"The layer went from {n} to {m} neurons and the right precondition had {k} constraints")
-    log(f"There were {n_succ} pullbacks, {n_none} NONE, {n_zero} ZERO, {n_quad} QUAD")
+        t /= n_run
+        log(f"The average time for pullback is {t}")
+        log(f"The layer went from {n} to {m} neurons and the right precondition had {k} constraints")
+        log(f"There were {n_succ} pullbacks, {n_none} NONE, {n_zero} ZERO, {n_quad} QUAD")

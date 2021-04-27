@@ -162,14 +162,15 @@ def any_error():
 
     
 def init(k : Callable[..., Any], 
-                n_workers = MP_NUM_WORKER, start_method = MP_START_METHOD):
+                n_workers = MP_NUM_WORKER, start_method = MP_START_METHOD, 
+                use_mp = USE_MP):
     """
     Initialize object from given data. Does nothing if mp is not enabled.
     """
     global ref_point
     ref_point = monotonic()
     
-    if USE_MP:
+    if use_mp:
         global manager, task_q, retn_q, evnt_q, exit_ev, workers, print_lock, err_ev
         
         ctx = get_context(method=start_method)

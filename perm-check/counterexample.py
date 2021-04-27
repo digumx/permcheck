@@ -160,7 +160,9 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
         b_ub = postc.center @ pos
     
     # Run linear program
-    res = linprog(np.zeros((b_ub.shape[0])), A_ub, b_ub, A_eq, b_eq,
+    log("Linprog call with shapes {0}, {1}, {2}, {3}".format(A_ub.shape, b_ub.shape, A_eq.shape,
+        b_eq.shape)) #DEBUG
+    res = linprog(np.zeros((A_ub.shape[1])), A_ub, b_ub, A_eq, b_eq,
                     bounds = (-1, 1),
                     method = SCIPY_LINPROG_METHOD )
     
