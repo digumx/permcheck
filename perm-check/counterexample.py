@@ -16,6 +16,7 @@ from scipy.linalg import lstsq, null_space
 from postcondition import LinearPostcond
 from global_consts import CEX_PULLBACK_NUM_PULLBACKS, CEX_PULLBACK_SAMPLES_SCALE
 from global_consts import FLOAT_RTOL, FLOAT_ATOL, SCIPY_LSTSQ_METHOD, NUMPY_SORT_METHOD
+from global_consts import SCIPY_LINPROG_METHOD
 from concurrency import log
 
 
@@ -84,7 +85,7 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
         
         # Project candidate and clamp to alpha
         n_A = null_space(A.T, rcond = FLOAT_ATOL)
-        #log(f"A: {A.shape}, n_A: {n_A.shape}, p: {p.shape}, cand: {cand.shape}")
+        #log(f"A: {A.shape}, n_A: {n_A.shape}, p: {p.shape}, cand: {cand.shape}") #DEBUG
         if n_A.shape[0] >= 1: 
             proj_p = p + (cand - p) @ n_A @ n_A.T
         else:
@@ -92,7 +93,7 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
         proj_p[ np.where( proj_p >  1 )] =  1
         proj_p[ np.where( proj_p < -1 )] = -1
         
-        ret.append(proj_p)
+        ret.append(proj_p @ postc.basis + postc.center)
     
     return ret
 
@@ -105,14 +106,14 @@ def pullback_cex_linear( cex : ArrayLike, postc : LinearPostcond, weights : Arra
     """
     # TODO remove
     assert cex.ndim == 1
-    assert weignts.ndim == 2
+    assert weights.ndim == 2
     assert bias.ndim == 1
     assert bias.shape[0] == weights.shape[1]
     assert cex.shape[0] == weights.shape[1]
     assert postc.num_neuron == weights.shape[0]
     
     # Run linear program
-    res = linprog(c = 0, A_ub = None, B_ub = None, 
+    res = linprog(c = np.zeros((postc.reg_dim)), A_ub = None, b_ub = None, 
                     A_eq = np.transpose( postc.basis @ weights ), 
                     b_eq = cex - bias - postc.center @ weights,
                     bounds = (-1, 1),
@@ -145,7 +146,8 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
         return None
     
     # Get LP for inverse image of point under ReLU and lift it to alpha space
-    proj = np.eye(postc.num_neuron)[ :, np.where(cex > FLOAT_ATOL) ]
+    proj = np.eye(postc.num_neuron)[ :, np.where(cex > FLOAT_ATOL)[0] ]
+    log("Postc basis is {0} and proj is {1}".format(postc.basis, proj))
     A_eq = np.transpose( postc.basis @ proj)
     b_eq = (cex - postc.center) @ proj
     
@@ -153,12 +155,12 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
     if np.all( cex > FLOAT_ATOL):       # No bounds
         A_ub = b_ub = None
     else:
-        pos = np.eye(postc.num_neuron)[ :, np.where(cex <= FLOAT_ATOL) ]
+        pos = np.eye(postc.num_neuron)[ :, np.where(cex <= FLOAT_ATOL)[0] ]
         A_ub = np.transpose( postc.basis @ pos )
         b_ub = postc.center @ pos
     
     # Run linear program
-    res = linprog(0, A_ub, B_ub, A_eq, b_eq,
+    res = linprog(np.zeros((b_ub.shape[0])), A_ub, b_ub, A_eq, b_eq,
                     bounds = (-1, 1),
                     method = SCIPY_LINPROG_METHOD )
     

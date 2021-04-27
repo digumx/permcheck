@@ -152,6 +152,14 @@ def _exit_on_error():
     if err_ev.is_set():
         stop()
 
+def any_error():
+    """
+    Is set to true if any worker has encountered any error
+    """
+    global err_ev
+    
+    return err_ev.is_set()
+
     
 def init(k : Callable[..., Any], 
                 n_workers = MP_NUM_WORKER, start_method = MP_START_METHOD):
@@ -226,6 +234,8 @@ def stop():
     for _ in workers:
         assert evnt_q.get() == ChildEvent.EXIT
     
+    log("All workers have sent exit message") #DEBUG
+    
     # Clear task queue.
     while True:
         try:
@@ -244,9 +254,13 @@ def stop():
     for w in workers:
         w.join()
     
+    log("All workers have been joined with") #DEBUG
+    
     # Close all processes
     for w in workers:
         w.close()
+    
+    log("All workers have been closed") #DEBUG
     
 
 def add_task(tsk):

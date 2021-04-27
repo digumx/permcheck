@@ -58,6 +58,14 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
     log(f"Lp check leaves with {len(l_cex)} cexes")
 
 
+    
+def _pp_lcex(lcex, postc):     # Post processign for lcex before return TODO Remove duplicates
+    if len(lcex) > 0:
+        return np.concatenate( [ c[np.newaxis, :] for c in lcex ], axis=0) @ postc.basis +\
+                        postc.center
+    else:
+        return []
+
 
 def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_cex : int = 1) \
                     -> list[ArrayLike]:
@@ -69,14 +77,6 @@ def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_c
     """
     assert postc.num_neuron == prec.num_neuron
    
-    
-    def _pp_lcex(lcex):     # Post processign for lcex before return TODO Remove duplicates
-        if len(lcex) > 0:
-            return np.concatenate( [ c[np.newaxis, :] for c in lcex ], axis=0) @ postc.basis +\
-                            postc.center
-        else:
-            return []
-    
     lcex = []
     
     # Check if postcondition is entirely within the positive region, or entirely negative.
@@ -93,7 +93,7 @@ def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_c
     if postc_all_pos or len(lcex) >= n_cex:
         log("Postcondition is entirely in positive domain") #DEBUG
         check_lp_inclusion(None, None, None, None, p_reg_m, p_reg_b, (-1, 1), n_cex-len(lcex), lcex)
-        return _pp_lcex(lcex)
+        return _pp_lcex(lcex, postc)
     
     # Lift the positivity conditions for each axis to alpha space.
     pos_per_ax_m, pos_per_ax_b = -np.transpose(postc.basis), np.copy(postc.center)
@@ -112,12 +112,12 @@ def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_c
             lcex.append(alpha)
             assert np.any(lcex[-1] < 0) #TODO remove DEBUG(?)
             if len(lcex) >= n_cex:
-                return _pp_lcex(lcex)
+                return _pp_lcex(lcex, postc)
         
         # Look for points in positive quadrant not in positive region
         check_lp_inclusion(pos_per_ax_m, pos_per_ax_b, None, None, p_reg_m, p_reg_b, (-1, 1),
                                 n_cex-len(lcex), lcex)
-        return _pp_lcex(lcex)
+        return _pp_lcex(lcex, postcn)
     
     # Otherwise, get full LP for positive and negative region with quadrant constraints, and lift
     m, b = prec.get_pos_constrs()
@@ -146,14 +146,14 @@ def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_c
                                 (-1, 1), n_cex-len(lcex), lcex)
         log(f"{len(lcex)} cexes after above sep plane") 
         if len(lcex) >= n_cex:
-            return _pp_lcex(lcex)
+            return _pp_lcex(lcex, postc)
         
         # Find cexes from below sep plane
         check_lp_inclusion(spp_m[np.newaxis,:], np.array([spp_b]), None, None, n_lp_m, n_lp_b, 
                                 (-1, 1), n_cex-len(lcex), lcex)
         log(f"{len(lcex)} cexes after below sep plane") 
         if len(lcex) >= n_cex:
-            return _pp_lcex(lcex)
+            return _pp_lcex(lcex, postc)
         
     
     elif prec.neg_side_type == NegSideType.ZERO:
@@ -162,17 +162,17 @@ def check_inclusion_pre_relu( postc: LinearPostcond, prec: DisLinearPrecond, n_c
         check_lp_inclusion(pos_per_ax_m, pos_per_ax_b, None, None, p_reg_m, p_reg_b, (-1, 1),
                                 n_cex-len(lcex), lcex)
         if len(lcex) >= n_cex:
-            return _pp_lcex(lcex)
+            return _pp_lcex(lcex, postc)
         
         # For each axis, check if there are points with negative value along the axis outside bounds
         for ax_m, ax_b in zip(pos_per_ax_m, pos_per_ax_b):
             check_lp_inclusion(-ax_m[np.newaxis,:], -ax_b, None, None, n_lp_m, n_lp_b, (-1, 1),
                                     n_cex-len(lcex), lcex)
             if len(lcex) >= n_cex:
-                return _pp_lcex(lcex)
+                return _pp_lcex(lcex, postc)
         
         
-    return _pp_lcex(lcex)
+    return _pp_lcex(lcex, postc)
 
 
 def check_inclusion_pre_linear(postc : LinearPostcond, prec_m : ArrayLike, prec_b : ArrayLike,
@@ -195,11 +195,7 @@ def check_inclusion_pre_linear(postc : LinearPostcond, prec_m : ArrayLike, prec_
     
     # Return
     log("\n\n ATTENTION : Returning {0} cex \n\n".format(len(lcex))) #DEBUG
-    if len(lcex) > 0:
-        return np.concatenate( [ c[np.newaxis, :] for c in lcex ] )
-    else:
-        return []
-    
+    return _pp_lcex(lcex, postc)
     
 
 
