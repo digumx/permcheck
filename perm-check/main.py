@@ -774,37 +774,58 @@ if __name__ == "__main__":
 
     import sys
     
+    # Some very simple cli
+    
     if len(sys.argv) < 3:
-        print("Usage: `python main.py <number_of_worker_processes>` `<unit-name>`")
-        exit(-1)
-        
-    if sys.argv[2] == 'safe':
+        print("Usage: python main.py <spec_file> <number_of_worker_processes>")
     
-        weights = [ np.array(   [[1000, -1000, 1000, -1000],
-                                 [-1000, 1000, -1000, 1000]] ),
-                    np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
-        biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
-        sig = [1, 0]
+    with open(sys.argv[1]) as spec:
+        spec_d = eval(spec.read())
         
-        ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1,
-                    num_workers = int(sys.argv[1]))
+        ret = main( weights         = [np.array(w) for w in spec_d['weights']],
+                    biases          = [np.array(b) for b in spec_d['biases']],
+                    pre_perm        = spec_d['pre_perm'],
+                    pre_lb          = np.array(spec_d['pre_lb']),
+                    pre_ub          = np.array(spec_d['pre_ub']),
+                    post_perm       = spec_d['post_perm'],
+                    post_epsilon    = spec_d['post_epsilon'],
+                    num_workers     = int(sys.argv[2])
+                    )
         
-        print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
-        print("\n\nDetails:\n\n")
         print(repr(ret))
-    
-    elif sys.argv[2] == 'cex':
         
-        weights = [ np.array(   [[1000, -1000, 1000, -1000],
-                                 [-1000, 1000, -1000, 1000]] ),
-                    np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
-        biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
-        sigI = [1, 0]
-        sigO = [0, 1]
         
-        ret = main(weights, biases, sigI, np.array([0, 0]), np.array([1,1]), sigO, 0.1,
-                    num_workers = int(sys.argv[1]))
-        
-        print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
-        print("\n\nDetails:\n\n")
-        print(repr(ret))
+    #if len(sys.argv) < 3:
+    #    print("Usage: `python main.py <number_of_worker_processes>` `<unit-name>`")
+    #    exit(-1)
+    #    
+    #if sys.argv[2] == 'safe':
+    #
+    #    weights = [ np.array(   [[1000, -1000, 1000, -1000],
+    #                             [-1000, 1000, -1000, 1000]] ),
+    #                np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
+    #    biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
+    #    sig = [1, 0]
+    #    
+    #    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1,
+    #                num_workers = int(sys.argv[1]))
+    #    
+    #    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
+    #    print("\n\nDetails:\n\n")
+    #    print(repr(ret))
+    #
+    #elif sys.argv[2] == 'cex':
+    #    
+    #    weights = [ np.array(   [[1000, -1000, 1000, -1000],
+    #                             [-1000, 1000, -1000, 1000]] ),
+    #                np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
+    #    biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
+    #    sigI = [1, 0]
+    #    sigO = [0, 1]
+    #    
+    #    ret = main(weights, biases, sigI, np.array([0, 0]), np.array([1,1]), sigO, 0.1,
+    #                num_workers = int(sys.argv[1]))
+    #    
+    #    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
+    #    print("\n\nDetails:\n\n")
+    #    print(repr(ret))
