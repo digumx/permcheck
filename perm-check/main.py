@@ -614,24 +614,23 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
 
                 # If already at layer 0, check if any cex is good
                 if layer <= 0:
-                    #for cex in cexes:
-                    #    log("Checking cex from inclusion in position 0")
-                    #    ret = check_cex(cex, weights, biases, out_lp_m, out_lp_b)
-                    #    if ret is not None:
-                    #        log("Found cex from inclusion in position 0")
-                    #        #stop()
-                    #        log("Returning findings 2") #DEBUG
-                    #        log(repr(cex[:n_inputs]))
-                    #        log(repr(cex[n_inputs:])) 
-                    #        log(repr(ret[:n_outputs])) 
-                    #        log(repr(ret[post_perm]))
-                    #        log(repr(ret[n_outputs:]))
-                    #        return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
-                    #                [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
-                    #                ret[n_outputs:])])
-                    #    else:
-                    #        log("Not a cex")
-                    continue
+                    for cex in cexes:
+                        log("Checking cex from inclusion in position 0")
+                        ret = check_cex(cex, weights, biases, out_lp_m, out_lp_b)
+                        if ret is not None:
+                            log("Found cex from inclusion in position 0")
+                            stop()
+                            log("Returning findings 2") #DEBUG
+                            log(repr(cex[:n_inputs]))
+                            log(repr(cex[n_inputs:])) 
+                            log(repr(ret[:n_outputs])) 
+                            log(repr(ret[post_perm]))
+                            log(repr(ret[n_outputs:]))
+                            return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
+                                    [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
+                                    ret[n_outputs:])])
+                        else:
+                            log("Not a cex")
                     
                 # Schedule pullback for each returned counterexample
                 else:
@@ -714,7 +713,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                     ret = check_cex(cex, weights, biases, out_lp_m, out_lp_b)
                     if ret is not None:
                         log("Found cex that has been pulled back")
-                        #stop()
+                        stop()
                         return PermCheckReturnStruct(PermCheckReturnKind.COUNTEREXAMPLE,
                                 [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                 ret[n_outputs:])])

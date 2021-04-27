@@ -353,7 +353,7 @@ if __name__ == "__main__":  #DEBUG
     init(k)
     log("init done")
     for i in range(n_inpts):
-        add_task(i)
+        add_task([i])
     log("Tasks added")
     start()
     log("Start complete")
