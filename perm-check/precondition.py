@@ -106,10 +106,12 @@ class DisLinearPrecond:
         elif self.neg_side_type == NegSideType.ZERO:
             
             # This must hold for ZERO to work, and is guaranteed if zero is in the region
-            assert np.all(self.pos_b >= 0) # TODO use tolerance?
+            assert np.all(self.pos_b >= 0) # TODO use numerical tolerance?
             
-            mat = self.pos_m * self.pos_m.shape[0]
+            mat = np.copy(self.pos_m)
+            dms = np.einsum("ij->j", mat >= FLOAT_ATOL) # Count number of positive in each column
             mat[np.where(mat < FLOAT_ATOL)] = 0         # Zero and negative are set to 0
+            mat = mat * dms                             # Dimensionality scaling factor 
             mat = mat / self.pos_b                      # For each eqn j, get [ n * m_i / b_j ]
             bnds = np.amax(mat, axis=1)                 # Inverse of these are bounds
             self.zer_i : ArrayLike = np.where(bnds > 0)[0]  # zer_i is not a tuple, take first elt.
@@ -125,8 +127,8 @@ class DisLinearPrecond:
         """
         d = {}
         
-        d['pos_m'] = repr(self.pos_m)
-        d['pos_b'] = repr(self.pos_b)
+        d['pos_m'] = self.pos_m
+        d['pos_b'] = self.pos_b
         d['n'] = self.num_neuron
         
         if self.neg_side_type == NegSideType.NONE:
@@ -134,14 +136,14 @@ class DisLinearPrecond:
         
         elif self.neg_side_type == NegSideType.ZERO:
             d['neg_side_type'] = 'ZERO'
-            d['zer_i'] = repr(self.zer_i)
-            d['zer_b'] = repr(self.zer_b)
+            d['zer_i'] = self.zer_i
+            d['zer_b'] = self.zer_b
         
         elif self.neg_side_type == NegSideType.QUAD:
             d['neg_side_type'] = 'QUAD'
-            d['neg_m'] = repr(self.neg_m)
-            d['neg_b'] = repr(self.neg_b)
-            d['neg_side_quad'] = repr(self.neg_side_quad)
+            d['neg_m'] = self.neg_m
+            d['neg_b'] = self.neg_b
+            d['neg_side_quad'] = self.neg_side_quad
         else:
             assert False
             
@@ -315,7 +317,7 @@ if __name__ == "__main__":  #DEBUG
             b = np.array([ 0.1, 0.1, 0.1, 0.1 ])
             p = np.array([0, 0, 0, 0])
             
-            print(f"Return: {pull_back_constr_relu([m], [b], p)}")
+            log("Return: {0}".format(pull_back_constr_relu([m], [b], p)))
         
     elif sys.argv[1] == "fuzz":
     

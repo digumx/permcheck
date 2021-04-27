@@ -9,7 +9,7 @@ from typing import Callable, Any
 from enum import Enum, auto
 from time import monotonic
 
-from global_consts import USE_MP
+from global_consts import USE_MP, MP_NUM_WORKER, MP_START_METHOD
 
 if USE_MP:
     from multiprocessing import get_context, current_process
@@ -18,9 +18,6 @@ if USE_MP:
     from traceback import print_exc
     import os
     import signal
-
-if USE_MP:
-    from global_consts import MP_NUM_WORKER, MP_START_METHOD
 
 
 if USE_MP:
@@ -128,6 +125,8 @@ Common globals managed regardless of USE_MP:
     
     ref_point : float       -   Reference point for logging time
 """
+ref_point = None
+
 if USE_MP:
     manager = None
     task_q = None
@@ -141,8 +140,8 @@ if USE_MP:
 else:
     retn_l = None
     kernel = None
+    ref_point = monotonic()
 
-ref_point = None
 
 
 def _exit_on_error():
