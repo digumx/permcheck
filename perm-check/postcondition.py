@@ -81,6 +81,8 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     
     NOTE: This destroys the input bss.
     """
+
+    log("Optimizing postcond basis via SVD")
     
     #u, s, v = svd(bss, overwrite_a=True, check_finite=False, lapack_driver=SCIPY_SVD_METHOD)
     u, s, v = svd(bss, overwrite_a=False, check_finite=True, lapack_driver=SCIPY_SVD_METHOD) #DEBUG
@@ -123,11 +125,17 @@ def push_forward_postcond_relu(left_cond: LinearPostcond,
     out_list = []       # A list containing (col_indices, basis, row_start, row_end) per tie class
     n_basis = 0         # Number of output basis vectors
     
+    log("Performing Tie Class analysis")
+    
     # Do the tie class analysis for each group. The sign denotes which region we are operating on.
     for tc_src, sgn in ((tc_pos, 1), (tc_neg, -1)):
         
+        log("Classifying columns with center sign {0}".format(sgn))
+        
         # While there are more tie classes to be found
         while len(tc_src) > 0:
+
+            log("{0} columns remaining".format(len(tc_src)))
 
             i = tc_src[0]
             tc_src_ = []

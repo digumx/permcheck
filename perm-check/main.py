@@ -110,7 +110,7 @@ class PermCheckReturnStruct:
         """
         Args should init other members depending on what kind is, see above. 
         """
-        log("Constructing return struct") #DEBUG
+        log("Constructing return struct")
         self.kind = kind
         
         if self.kind == PermCheckReturnKind.PROOF:
@@ -122,7 +122,7 @@ class PermCheckReturnStruct:
         elif self.kind == PermCheckReturnKind.ERROR:
             self.trace = args[0]
             
-        log("Return struct constructed") #DEBUG
+        log("Return struct constructed")
 
     def __str__(self):
         """
@@ -151,11 +151,11 @@ class PermCheckReturnStruct:
             s = "PermCheck has found {0} COUNTEREXAMPLES: \n".format(len(self.counterexamples))
             for i, (x, sx, nx, snx, nsx) in enumerate(self.counterexamples):
                 s += "\nCounterexample {0}:\n".format(i)
-                s += "    Input:                            {0}\n".format(x)
-                s += "    Permuted Input:                   {0}\n".format(sx)
-                s += "    Output from Input:                {0}\n".format(nx)
-                s += "    Permutation of Output from Input: {0}\n".format(snx)
-                s += "    Output from Permuted Input:       {0}\n".format(nsx)
+                s += "    Input:                            {0}\n".format(x.tolist())
+                s += "    Permuted Input:                   {0}\n".format(sx.tolist())
+                s += "    Output from Input:                {0}\n".format(nx.tolist())
+                s += "    Permutation of Output from Input: {0}\n".format(snx.tolist())
+                s += "    Output from Permuted Input:       {0}\n".format(nsx.tolist())
             return s
         
         elif self.kind == PermCheckReturnKind.PROOF:
@@ -164,7 +164,8 @@ class PermCheckReturnStruct:
             
             # Print the first postcondition
             s += "\nThe input joint vectors are given by:\n a @ {0} + {1}\n".format(
-                                            self.postconds[0].basis, self.postconds[0].center )
+                                            self.postconds[0].basis.tolist(),
+                                            self.postconds[0].center.tolist() )
             
 
             # Print all the postconditions upto the inclusion layer
@@ -173,11 +174,13 @@ class PermCheckReturnStruct:
                 
                 # After linear layer
                 s += "\nWhich leads to values after the linear layer {0} of form:\n".format(l)
-                s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis, self.postconds[2*l+1].center)
+                s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis.tolist(),
+                        self.postconds[2*l+1].center.tolist())
 
                 # After ReLU
                 s += "\nWhich leads to values after the ReLU layer {0} of form:\n".format(l)
-                s += "a @ {0} + {1}\n".format(self.postconds[2*l+2].basis, self.postconds[2*l+2].center)
+                s += "a @ {0} + {1}\n".format(self.postconds[2*l+2].basis.tolist(),
+                        self.postconds[2*l+2].center.tolist())
                 l += 1
                 
                 
@@ -188,12 +191,13 @@ class PermCheckReturnStruct:
                 
                 # Print postcondition
                 s += "\nWhich leads to values after the linear layer {0} of form:\n".format(l)
-                s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis, self.postconds[2*l+1].center)
+                s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis.tolist(),
+                        self.postconds[2*l+1].center.tolist())
                 
                 # Print precondition
                 pm, pb = prlu_pcs[0].get_pos_constrs()
                 s += "\nEach of which satisfy:\n"
-                s += "x @ {0} <= {1}\n".format(pm, pb)
+                s += "x @ {0} <= {1}\n".format(pm.tolist(), pb.tolist())
                 r = prlu_pcs[0].get_neg_constrs()
                 if r is not None:
                     nm, nb = r
@@ -211,17 +215,17 @@ class PermCheckReturnStruct:
                 # Print the pre-linear precond
                 m, b = plin
                 s += "\nEach of which give values before the linear layer {0} that satisfy:\n".format(l)
-                s += "x @ {0} <= {1}\n".format(m, b)
+                s += "x @ {0} <= {1}\n".format(m.tolist(), b.tolist())
                 
                 # Print the pre-relu precond
                 pm, pb = prlu.get_pos_constrs()
                 s += "\nEach of are values after the linear layer {0} that satisfy:\n".format(l)
-                s += "x @ {0} <= {1}\n".format(pm, pb)
+                s += "x @ {0} <= {1}\n".format(pm.tolist(), pb.tolist())
                 r = prlu.get_neg_constrs()
                 if r is not None:
                     nm, nb = r
                     s += "    Or satisfy:\n"
-                    s += "x @ {0} <= {1}\n".format(nm, nb)
+                    s += "x @ {0} <= {1}\n".format(nm.tolist(), nb.tolist())
 
                 l += 1
                     
@@ -229,7 +233,7 @@ class PermCheckReturnStruct:
             # Print the output condition
             m, b = self.pre_linear_pconds[-1]
             s += "\nEach of which give values before the linear layer {0} that satisfy:\n".format(l)
-            s += "x @ {0} <= {1}\n".format(m, b)
+            s += "x @ {0} <= {1}\n".format(m.tolist(), b.tolist())
             
             s += "\nWhich characterizes the output condition"
 
@@ -334,15 +338,12 @@ def check_cex( cex, weights, bias, out_lp_m, out_lp_b ):
     """
     x = np.copy(cex)
     
-    #log("Checking cex {0}".format(x)) #DEBUG
     
     for w, b in zip(weights, bias):
-        #log("w {0} b {0}".format(w, b)) #DEBUG
         x = x @ w
         x = x + b
         x[ np.where( x < 0 ) ] = 0
         
-    #log("Final x {0}".format(x)) #DEBUG
     
     return x if np.any( x @ out_lp_m > out_lp_b ) else None
 
@@ -498,7 +499,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             # Get returned message
             ret = get_return(wait=True)
             msg, layer, *data = ret
-            log("Recieved message {0} at layer {1}".format(ret, layer)) # DEBUG
+            log("Recieved message {0} at layer {1}".format(msg, layer)) 
           
           
             # If message says a pushforward is done, que the next if available, or set flags
@@ -507,7 +508,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Get the postcond
                 postconds[2*layer+1] = data[0]
                 
-                log("Added pre-relu postcond {0}".format(data[0]))   # DEBUG
                 log("Layer {0} has pre-relu postcond of dim {1}".format(layer, data[0].num_neuron))
                 
                 # If we also have a precondtion, schedule an inclusion check
@@ -527,7 +527,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 pcidx = 2 * (layer+1)           # where the next postcond will go
                 postconds[pcidx] = data[0]
                 
-                log("Added pre-linear postcond {0}".format(data[0]))   # DEBUG
                 log("Layer {0} has pre-linear postcond of dim {1}".format(layer, data[0].num_neuron))
                 
                 # If we also have a precondtion, schedule an inclusion check
@@ -560,7 +559,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Get the precond
                 pre_relu_pconds[layer-1] = data[0]      # For now, just pick the first precond produced
                 
-                log("Added pre-relu precond {0}".format(data[0]))   # DEBUG
                 log("Layer {0} has pre-relu precond of dim {1}".format(layer-1, data[0].num_neuron))
 
                 # If we also have a precondtion, schedule an inclusion check
@@ -579,7 +577,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 
                 pre_linear_pconds[layer] = data[0]      # For now, just pick the first precond produced
                 
-                log("Added pre-linear precond {0}".format(data[0]))   # DEBUG
                 log("Layer {0} has pre-linear precond of shape {1}, center is {2}".format(layer-1,
                                                         data[0][0].shape, centers[layer*2].shape))
 
@@ -625,7 +622,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                         if ret is not None:
                             log("Found cex from inclusion in position 0")
                             stop()
-                            log("Returning findings 2") #DEBUG
                             return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
                                     [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                     ret[n_outputs:])])
@@ -770,7 +766,7 @@ if __name__ == "__main__":
     # Some very simple cli
     
     if len(sys.argv) < 3:
-        print("Usage: python main.py <spec_file> <number_of_worker_processes>")
+        print("Usage: python main.py <spec_file> <number_of_worker_processes> [output_file]")
         exit(-1)
     
     with open(sys.argv[1]) as spec:
@@ -787,7 +783,12 @@ if __name__ == "__main__":
                     )
         
         print("\n\n\nO U T P U T: \n\n\n")
-        print(repr(ret))
+        #print(repr(ret))
+        print(str(ret))
+        
+        if len(sys.argv) >= 4:
+            with open(sys.argv[3], 'w') as f:
+                f.write(repr(ret))
         
         
     #if len(sys.argv) < 3:
