@@ -39,6 +39,7 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
         log(f"Checked constraint {i} of {len(outer_ub_a)}, found {len(l_cex)} cexes")
         i += 1
         
+        #inner_bounds = (-1, 1) #DEBUG
         res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
                 method = SCIPY_LINPROG_METHOD)      # Call optimizer
         
@@ -53,7 +54,24 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
                     break
         
         else:
-            raise RuntimeError("Optimizer returned bad status: {0}".format(res.status))
+            log("Linear optimizer returned bad status: {0}, retrying with no presolve".format(res.status))
+            
+            res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
+                    method = SCIPY_LINPROG_METHOD, options = {'presolve' : False}) # Call optimizer
+            
+            if res.status == 2:    # Inner is infeasable
+                log("Infeasable inner") #DEBUG
+                return
+            
+            elif res.status == 0:
+                if -res.fun > b:    # Out of bounds, found cex
+                    l_cex.append(res.x)
+                    if len(l_cex) >= n_cex:
+                        break
+        
+            else:
+                raise RuntimeError("Optimizer returned bad status: {0}, exit message {2}, bounds were {1}".format(
+                    res.status, inner_bounds, res.message))
     
     log(f"Lp check leaves with {len(l_cex)} cexes")
 
@@ -194,7 +212,6 @@ def check_inclusion_pre_linear(postc : LinearPostcond, prec_m : ArrayLike, prec_
             lcex)
     
     # Return
-    log("\n\n ATTENTION : Returning {0} cex \n\n".format(len(lcex))) #DEBUG
     return _pp_lcex(lcex, postc)
     
 

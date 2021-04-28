@@ -86,7 +86,7 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     u, s, v = svd(bss, overwrite_a=False, check_finite=True, lapack_driver=SCIPY_SVD_METHOD) #DEBUG
     
     if np.all( s < FLOAT_ATOL ):    # TODO This can happen if image is a single point, allow this
-        log("All bases are close to 0, bss: {0}, u: {1}, s: {2}, v: {3}".format(bss, u, s, v))
+        log("All bases are close to 0")
         raise RuntimeError("Attempted to optimize Zero Basis")
     
     # Find the rank of bss
@@ -99,7 +99,7 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     b = np.sum(np.absolute(u*s), axis=0)    # New bounds
     
     if np.any( b < FLOAT_ATOL ): #DEBUG
-        log("Bounds are close to 0: {0}, bss: {1}, u: {2}, s: {3}, v: {4}".format(b, bss, u, s, v))
+        log("Bounds are close to 0")
         raise RuntimeError()
     
     return v * b[:, np.newaxis], p
@@ -115,9 +115,6 @@ def push_forward_postcond_relu(left_cond: LinearPostcond,
 
     # First, we use tie class analysis to build a list of basis vectors for each class.
 
-    log("ATTENTION ATTENTION: Pushing forward basis {0}, center {1}".format(left_cond.basis,
-        left_cond.center)) #DEBUG
-
     # The center point defines some of the cuts for the tie class - things in the same tie class
     # should have same sign in center.
     tc_pos = np.where(left_cond.center >= 0)[0]
@@ -128,11 +125,9 @@ def push_forward_postcond_relu(left_cond: LinearPostcond,
     
     # Do the tie class analysis for each group. The sign denotes which region we are operating on.
     for tc_src, sgn in ((tc_pos, 1), (tc_neg, -1)):
-        #log(f"Checking group {sgn}") #DEBUG
         
         # While there are more tie classes to be found
         while len(tc_src) > 0:
-            #log(f"Remaining number of neurons to classify: {len(tc_src)}      ", end='\r')#DEBUG
 
             i = tc_src[0]
             tc_src_ = []
@@ -192,9 +187,6 @@ def push_forward_postcond_relu(left_cond: LinearPostcond,
     center = np.copy(left_cond.center)
     center[np.where(left_cond.center < 0)] = 0
  
-    log("Center after relu: {0}".format(center)) #DEBUG
-    log("Basis after relu: {0}".format(basis)) #DEBUG
-    
     # Reduce basis if flag set
     if optimize_postcond_basis:
         b, p = optimize_postcond_basis(basis)
@@ -218,13 +210,9 @@ def push_forward_postcond_linear(postc: LinearPostcond, weights: ArrayLike, bias
     post_spn = postc.basis @ weights
     post_center = postc.center @ weights + bias
     
-    log("center {0}, post_center {1}, basis {2}, post_spn {3}, weights {4}, bias {5}".format(
-                            postc.center, post_center, postc.basis, post_spn, weights, bias)) #DEBUG
-    
     # Optimise span to basis
     if optimize_basis:
         post_basis, perp_basis = optimize_postcond_basis(post_spn)
-        log("Optimized basis {0}".format(post_basis))
         return LinearPostcond(post_basis, post_center, perp_basis = perp_basis)
     
     # Or just return as is
@@ -301,8 +289,8 @@ if __name__ == '__main__':
             data['center'] = center.tolist()
             data['weights'] = weights.tolist()
             data['bias'] = bias.tolist()
-            with open(sys.argv[1], 'w') as log:
-                log.write(str(data))
+            with open(sys.argv[1], 'w') as logf:
+                logf.write(str(data))
             
         def run_pf():
             global tc1, basis, center

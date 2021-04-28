@@ -194,7 +194,7 @@ class PermCheckReturnStruct:
                 pm, pb = prlu_pcs[0].get_pos_constrs()
                 s += "\nEach of which satisfy:\n"
                 s += "x @ {0} <= {1}\n".format(pm, pb)
-                r = prec.get_neg_constrs()
+                r = prlu_pcs[0].get_neg_constrs()
                 if r is not None:
                     nm, nb = r
                     s += "    Or satisfy:\n"
@@ -214,10 +214,10 @@ class PermCheckReturnStruct:
                 s += "x @ {0} <= {1}\n".format(m, b)
                 
                 # Print the pre-relu precond
-                pm, pb = prec.get_pos_constrs()
+                pm, pb = prlu.get_pos_constrs()
                 s += "\nEach of are values after the linear layer {0} that satisfy:\n".format(l)
                 s += "x @ {0} <= {1}\n".format(pm, pb)
-                r = prec.get_neg_constrs()
+                r = prlu.get_neg_constrs()
                 if r is not None:
                     nm, nb = r
                     s += "    Or satisfy:\n"
@@ -271,7 +271,6 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
         log("Pulling back output LP across relu layer {0}".format(layer)) 
         ret = pull_back_constr_relu([ms], [bs], centr)
         log("Pullback done")
-        log("Returning {0} from outlp".format(ret)) #DEBUG
         return ReturnMessage.PULL_B_RELU_DONE, layer, ( ret[0] if len(ret) > 0 else None )
                                                 # Return first precond, TODO refine
     
@@ -287,7 +286,6 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
     elif task_id == TaskMessage.ICHK_PRE_RELU:
         postc, prec = args
         log("Cheking inclusion at {0} before the ReLU".format(layer))
-        log("Postcond {0}, precond {1}".format(postc, prec))
         cexes = check_inclusion_pre_relu( postc, prec )
         log("Done checking inclusion, found {0} cexex".format(len(cexes)))
         return ReturnMessage.ICHK_PREREL_DONE, layer, cexes
@@ -296,7 +294,6 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
     elif task_id == TaskMessage.ICHK_PRE_LINEAR:
         postc, m, b = args
         log("Cheking inclusion at {0} before the ReLU".format(layer))
-        log("Postcond {0}, m {1}, b{2}".format(postc, m, b)) #DEBUG
         cexes = check_inclusion_pre_linear( postc, m, b )
         log("Done checking inclusion, found {0} cexex".format(len(cexes)))
         return ReturnMessage.ICHK_PRELIN_DONE, layer, cexes
@@ -313,7 +310,6 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
     elif task_id == TaskMessage.CEX_PB_LINEAR:
         cex, postc, w, b = args
         log("Pulling back cex over linear layer {0}".format(layer))
-        log("Cex is {0}".format(cex)) #DEBUG
         cex = pullback_cex_linear( cex, postc, w, b )
         log("Done pulling back counterexample over linear layer {0}".format(layer))
         return ReturnMessage.CEX_PB_LINEAR_DONE, layer, cex
@@ -630,11 +626,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                             log("Found cex from inclusion in position 0")
                             stop()
                             log("Returning findings 2") #DEBUG
-                            log(repr(cex[:n_inputs]))
-                            log(repr(cex[n_inputs:])) 
-                            log(repr(ret[:n_outputs])) 
-                            log(repr(ret[post_perm]))
-                            log(repr(ret[n_outputs:]))
                             return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
                                     [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                     ret[n_outputs:])])
@@ -644,8 +635,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Schedule pullback for each returned counterexample
                 else:
                     for cex in cexes:
-                        log("Scheduling pullback of cex candidate across ReLU, postcond is {0}, cex is {1}".format(
-                            postconds[layer * 2], cex )) #DEBUG
+                        log("Scheduling pullback of cex candidate across ReLU")
                         add_task(( TaskMessage.CEX_PB_RELU, layer, cex, postconds[layer * 2] ))
                     
                 
@@ -670,14 +660,12 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # If layer is 0, shedule linear pullbacks
                 if layer <= 0:
                     for cex in cexes:
-                        log("Sceduling pullback of cex {0} from inclusion over first linear layer".format(cex))
-                                                                                            #DEBUG
+                        log("Sceduling pullback of cex from inclusion over first linear layer")
                         add_task(( TaskMessage.CEX_PB_LINEAR, 0, cex, postconds[0], weights[0], 
                                         biases[0] ))
                 
                 # Schedule pullback for each returned counterexample
                 else:
-                    #log("Postconds {0}".format(postconds)) #DEBUG
                     for cex in cexes:
                         log("Scheduling pullback of cex candidate across combined layer")
                         add_task(( TaskMessage.CEX_PB_LAYER, layer, cex, postconds[layer * 2 - 1],
@@ -692,14 +680,12 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # If next layer is 0, shedule linear pullbacks
                 if layer-1 <= 0:
                     for cex in cexes:
-                        log("Sceduling pullback of cex {0} from combined over first linear layer".format(cex))
-                                                                                            #DEBUG
+                        log("Sceduling pullback of cex from combined over first linear layer")
                         add_task(( TaskMessage.CEX_PB_LINEAR, 0, cex, postconds[0], weights[0], 
                                         biases[0] ))
                 
                 # Else, continue layer pullback
                 else:
-                    log("Postconds {0}".format(postconds)) #DEBUG
                     for cex in cexes:
                         log("Scheduling pullback of cex candidate across combined layer")
                         add_task(( TaskMessage.CEX_PB_LAYER, layer-1, cex, postconds[layer*2 - 3],
@@ -746,15 +732,13 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 
                 # If next layer is 0, shedule linear pullbacks
                 if layer-1 <= 0:
-                    log("Sceduling pullback of cex {0} from relu over first linear layer".format( 
-                                                                    cex)) #DEBUG
+                    log("Sceduling pullback of cex from relu over first linear layer")
                     add_task(( TaskMessage.CEX_PB_LINEAR, 0, cex, postconds[0], weights[0], 
                                     biases[0] ))
                 
                 # Else, continue layer pullback
                 else:
                     log("Scheduling pullback of cex candidate across combined layer")
-                    log("Postconds {0}".format(postconds)) #DEBUG
                     add_task(( TaskMessage.CEX_PB_LAYER, layer-1, cex, postconds[layer*2 - 3],
                                     weights[layer-1], biases[layer-1], n_pb_per_layer ))
                     
@@ -802,6 +786,7 @@ if __name__ == "__main__":
                     num_workers     = int(sys.argv[2])
                     )
         
+        print("\n\n\nO U T P U T: \n\n\n")
         print(repr(ret))
         
         

@@ -147,7 +147,6 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
     
     # Get LP for inverse image of point under ReLU and lift it to alpha space
     proj = np.eye(postc.num_neuron)[ :, np.where(cex > FLOAT_ATOL)[0] ]
-    log("Postc basis is {0} and proj is {1}".format(postc.basis, proj))
     A_eq = np.transpose( postc.basis @ proj)
     b_eq = (cex - postc.center) @ proj
     
@@ -160,8 +159,6 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
         b_ub = postc.center @ pos
     
     # Run linear program
-    log("Linprog call with shapes {0}, {1}, {2}, {3}".format(A_ub.shape, b_ub.shape, A_eq.shape,
-        b_eq.shape)) #DEBUG
     res = linprog(np.zeros((A_ub.shape[1])), A_ub, b_ub, A_eq, b_eq,
                     bounds = (-1, 1),
                     method = SCIPY_LINPROG_METHOD )

@@ -232,7 +232,7 @@ def pull_back_constr_relu(ms: list[ArrayLike], bs: list[ArrayLike], point: Array
     ap = np.all(point >= 0)
     quad = np.where(point <= 0)[0] if not ap else np.where(point <= axtols)[0]
     for m, b in zip(ms, bs):
-        log("Pulling back LP M {0}, b {1}".format(m, b))
+        log("Pulling back LP")
         
         # If zero is in the region, try pulling back around it.
         if np.all(b > FLOAT_ATOL):
@@ -240,7 +240,7 @@ def pull_back_constr_relu(ms: list[ArrayLike], bs: list[ArrayLike], point: Array
             if np.all(point[c.zer_i] <= c.zer_b) or (ap and np.all(point @ m <= b)):
                 out_l.append(c)
                 continue
-        log("Zero not in region") #DEBUG
+        log("Zero not in region")
         
         # Else, do quad pullback
         c = DisLinearPrecond(m, b, neg_side_type = NegSideType.QUAD, neg_side_quad = quad)

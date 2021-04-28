@@ -25,13 +25,13 @@ class ScipyLinprogMethod(Enum):
             them manually based on benchmarks may be better.
     """
     HIGHS_DS    = 'highs-ds'        # High perf dual revised simplex
-    HIGHS_IMP   = 'highs-ipm'       # High perf interior point method
+    HIGHS_IPM   = 'highs-ipm'       # High perf interior point method
     HIGHS_AUTO  = 'highs'           # Auto choose between two highs (don't use)
     DEFAULT     = 'interior-point'  # Default, robust interior point method
     ACC_SIMPLEX = 'revised simplex' # A more accurate legacy simplex
     LEG_SIMPLEX = 'simplex'         # The legacy simplex implementation
 
-SCIPY_LINPROG_METHOD = ScipyLinprogMethod.HIGHS_DS.value    # Must be one of the above
+SCIPY_LINPROG_METHOD = ScipyLinprogMethod.HIGHS_IPM.value    # Must be one of the above
 
 
 class ScipySVDMethod(Enum):
