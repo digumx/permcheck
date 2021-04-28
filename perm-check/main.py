@@ -467,8 +467,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             centers[ 2*i + 2 ] = np.copy( centers[ 2*i + 1 ] )              
             centers[ 2*i + 2 ][ np.where( centers[ 2*i + 2 ] < 0 )] = 0     # Trhough relu
         
-        
-        # Set up output side postcondition
+       
+       # Set up output side postcondition
         p_blk = np.zeros((n_outputs, n_outputs))
         for i, p in enumerate(post_perm):
             p_blk[p, i] = 1
@@ -476,6 +476,14 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         out_lp_b = np.ones(2 * n_outputs) * post_epsilon
         pre_linear_pconds[-1] = (out_lp_m, out_lp_b)
         
+        
+        # Check if center point is a cex in itself
+        ret = check_cex(inp_c, weights, biases, out_lp_m, out_lp_b)
+        if ret is not None:
+            log("Center point is a counterexample")
+            return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
+                    [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
+                    ret[n_outputs:])])
         
         # Schedule pullback of out lp
         add_task( (TaskMessage.PULL_B_RELU, n_layers, out_lp_m, out_lp_b, centers[-1]) )
@@ -549,8 +557,9 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Quit if no pullback was found
                 if data[0] is None:
                     log("No pullback found at layer {0}".format(layer))
-                    stop()
-                    return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE )
+                    continue         # Do not stop if pullback failed, TODO branch
+                    #stop()
+                    #return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE )
                     
                 # Get the precond
                 pre_relu_pconds[layer-1] = data[0]      # For now, just pick the first precond produced
@@ -637,7 +646,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                     for cex in cexes:
                         log("Scheduling pullback of cex candidate across ReLU, postcond is {0}, cex is {1}".format(
                             postconds[layer * 2], cex )) #DEBUG
-                        add_task(( TaskMessage.CEX_PB_RELU, layer-1, cex, postconds[layer * 2] ))
+                        add_task(( TaskMessage.CEX_PB_RELU, layer, cex, postconds[layer * 2] ))
                     
                 
             # If the inclusion check is done, quit if successfull, or try to pull back cex TODO cex pb
@@ -778,6 +787,7 @@ if __name__ == "__main__":
     
     if len(sys.argv) < 3:
         print("Usage: python main.py <spec_file> <number_of_worker_processes>")
+        exit(-1)
     
     with open(sys.argv[1]) as spec:
         spec_d = eval(spec.read())
