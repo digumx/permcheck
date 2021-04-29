@@ -11,7 +11,8 @@ from scipy.optimize import linprog
 from scipy.linalg import svd
 
 from global_consts import SCIPY_SVD_METHOD, FLOAT_ATOL, FLOAT_RTOL
-from global_consts import REDUCE_POSTCOND_BASIS_LINEAR, REDUCE_POSTCOND_BASIS_RELU
+from global_consts import REDUCE_POSTCOND_BASIS_LINEAR, REDUCE_POSTCOND_BASIS_RELU_TC
+from global_consts import REDUCE_POSTCOND_BASIS_RELU_WHOLE
 from utils import check_parallel
 from concurrency import log, init
 
@@ -109,7 +110,8 @@ def optimize_postcond_basis(bss: ArrayLike, rnk = None) -> ArrayLike:
     
 
 def push_forward_postcond_relu(left_cond: LinearPostcond,
-                                optimize_basis : bool = REDUCE_POSTCOND_BASIS_RELU) -> LinearPostcond:
+                                optimize_tc_basis : bool = REDUCE_POSTCOND_BASIS_RELU_TC,
+                                optimize_basis : bool = REDUCE_POSTCOND_BASIS_RELU_WHOLE) -> LinearPostcond:
     """
     Pushes forward a `LinearPostcond` across a relu via tie class analysis. Returns a LinearPostcond
     for the right side of the ReLU. If `optimize_basis is true
@@ -187,16 +189,27 @@ def push_forward_postcond_relu(left_cond: LinearPostcond,
         
         
     # Copy data from out_list into correct indices to create basis matrix
-    basis = np.zeros((n_basis, left_cond.num_neuron))
-    for tc, bs, rb, eb in out_list:
-        basis[rb:eb, tc] = bs
+    if (not optimize_basis) and optimize_tc_basis:
+        comb_l = []
+        for i, (tc, bs, rb, eb) in enumerate(out_list):
+            log("Optimizing tie class basis {0} of {1}".format(i, len(out_list)))
+            b, _ = optimize_postcond_basis(bs)
+            ab = np.zeros(( b.shape[0], left_cond.num_neuron ))
+            ab[:, tc] = b
+            comb_l.append(ab)
+        basis = np.concatenate(comb_l, axis=0)
+    else:
+        basis = np.zeros((n_basis, left_cond.num_neuron))
+        for tc, bs, rb, eb in out_list:
+            basis[rb:eb, tc] = bs
         
     # New center is relu of old center
     center = np.copy(left_cond.center)
     center[np.where(left_cond.center < 0)] = 0
  
     # Reduce basis if flag set
-    if optimize_postcond_basis:
+    if optimize_basis:
+        log("Optimising post ReLU basis")
         b, p = optimize_postcond_basis(basis)
         return LinearPostcond(b, center, perp_basis=p)
     

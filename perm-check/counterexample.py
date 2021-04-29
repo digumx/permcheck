@@ -57,9 +57,11 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
     n = sum(weights.shape)
     
     # Get the samples
+    log("Sampling {0} samples".format(samples_scale * n))
     samples = rand(samples_scale * n , postc.reg_dim)
     
     # Score the samples
+    log("Scoring {0} samples".format(samples.shape[0]))
     x_vals = samples @ postc.basis + postc.center
     x_vals[ np.where(x_vals < 0)[0] ] = 0
     disps = x_vals @ weights + bias - cex
@@ -71,8 +73,10 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
     
     # Project them, clamp to alpha bounds
     ret = []
-    for cand in cex_cands:
+    for i, cand in enumerate(cex_cands):
         
+        log("Projecting {0} of {1} candidates".format(i, len(cex_cands)))
+
         # Get linear map
         x_val = cand @ postc.basis + postc.center
         quad = np.ones((1, postc.center.shape[0]))

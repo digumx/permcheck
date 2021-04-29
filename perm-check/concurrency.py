@@ -9,7 +9,7 @@ from typing import Callable, Any
 from enum import Enum, auto
 from time import monotonic
 
-from global_consts import USE_MP, MP_NUM_WORKER, MP_START_METHOD
+from global_consts import USE_MP, MP_NUM_WORKER, MP_START_METHOD, MP_JOIN_TO, MP_FORCE_STOP
 
 if USE_MP:
     from multiprocessing import get_context, current_process
@@ -82,14 +82,17 @@ if USE_MP:
             # Push return
             try:
                 rq.put_nowait(ret)
-                tq.task_done()
             except Full:
                 continue
+            finally:
+                tq.task_done()
             
             # Return has been pushed
             has_ret = False
         
         eq.put(ChildEvent.EXIT)
+        
+        log("Worker exiting")
         
             
 
@@ -185,7 +188,8 @@ def init(k : Callable[..., Any],
         workers = [ ctx.Process(    target = _worker, 
                                     args = (    k, task_q, retn_q, evnt_q, exit_ev, ref_point,
                                                 print_lock, err_ev ),
-                                    name = "WORKER {0}".format(i)
+                                    name = "WORKER {0}".format(i),
+                                    daemon = True
                                 ) for i in range(n_workers) ]
         
     else:
@@ -226,18 +230,24 @@ def stop():
         return
 
     global exit_ev, evnt_q, task_q, retn_q, workers
+
+    if MP_FORCE_STOP:
+        log("Force stopping all workers")
+        for w in workers:
+            w.terminate()
+        return
     
     # Send stop message
     exit_ev.set()
     
-    # Wait for all processes to give EXIT message. This clears event queue
+    # Wait for all processes to give EXIT message. This clears event queue TODO timeout
     for _ in workers:
         assert evnt_q.get() == ChildEvent.EXIT
     
     log("All workers have sent exit message") #DEBUG
     
     # Clear task queue.
-    while True:
+    while True: # TODO timeout
         try:
             task_q.get_nowait()
         except Empty:
@@ -250,15 +260,22 @@ def stop():
         except Empty:
             break
     
-    # Join with all processes
-    for w in workers:
-        w.join()
+    log("All ques clear") #DEBUG
+    
+    # Join with all processes, or terminate them
+    
+    for i, w in enumerate(workers):
+        ret = w.join(timeout = MP_JOIN_TO)
+        if ret is None:
+            log("Join timed out, terminating worker")
+            w.terminate()
+        log("Workers {0} of {0} joined with".format(i, len(workers)))
     
     log("All workers have been joined with") #DEBUG
     
     # Close all processes
-    for w in workers:
-        w.close()
+    #for w in workers: #TODO this hangs, figure why
+    #    w.close()
     
     log("All workers have been closed") #DEBUG
     

@@ -87,10 +87,15 @@ If set tu true, when postconditions are pushed forward, redundant generating vec
 and only a minimal basis is maintained. This reduces the number of vectors to keep track of and
 improves performance of future push forwards and inclusion checks, but introduces unreachable
 behavior and weakens the postcondition. We have two seperate flags for the pushforward through the
-linear and relu layers respectively.
+linear and relu layers respectively. For the relu layer, there are two possible positions where an
+optimization can be done: REDUCE_POSTCOND_BASIS_RELU_TC optimizes the basis for each tie class, but
+does not generate a perpendicular basis. REDUCE_POSTCOND_BASIS_RELU_WHOLE optimizes the total
+composed basis after tie class analysis, and is slower, but generates a perpendicular basis. If the
+whole basis is being optimized, optimization of per-tc basis is turned off.
 """
-REDUCE_POSTCOND_BASIS_LINEAR = True
-REDUCE_POSTCOND_BASIS_RELU = False
+REDUCE_POSTCOND_BASIS_LINEAR        = False
+REDUCE_POSTCOND_BASIS_RELU_TC       = True
+REDUCE_POSTCOND_BASIS_RELU_WHOLE    = False
 
 
 
@@ -98,7 +103,7 @@ REDUCE_POSTCOND_BASIS_RELU = False
 """ Configuration for concurrency """
 
 """
-Should multiprocess based parallelism be used?
+Should multiprocess based parallelism be used? Recommended to keep this on.
 """
 USE_MP = True
 
@@ -114,6 +119,17 @@ processes will be doing IO and organization, so should not hold up the CPU.
 """
 MP_NUM_WORKER = 10
 
+"""
+The number of seconds after which to kill a process if it is unresponsive during the stop phase.
+"""
+MP_JOIN_TO = 0.5
+
+"""
+If set to true, calling stop will force terminate all workers. Note that this may leave the program
+in a state where future calls cause deadlocks to happen.
+"""
+MP_FORCE_STOP = True
+
 
 
 
@@ -122,7 +138,7 @@ MP_NUM_WORKER = 10
 """
 A multiplier for the number of random samples to pick from the space of alpha values.
 """
-CEX_PULLBACK_SAMPLES_SCALE = 100
+CEX_PULLBACK_SAMPLES_SCALE = 20 #100
 
 """
 The default number of candidate pullbacks to return per layer. TODO Basically not used 
@@ -133,4 +149,4 @@ CEX_PULLBACK_NUM_PULLBACKS = 5
 The default multiplier for the number of cexes candidates to check when inclusion fails. The actual
 number is calculated as this times the number of neurons in the DNN.
 """
-CEX_PULLBACK_NUM_TOTAL_CANDIDATES_MULT = 20
+CEX_PULLBACK_NUM_TOTAL_CANDIDATES_MULT = 5

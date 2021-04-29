@@ -67,3 +67,7 @@ if __name__ == "__main__":
     # Write the object to given file
     with open(sys.argv[3], 'w') as f:
         f.write(repr(dct))
+        
+    # Print out info
+    print("There are a 3 layers, with {0}, {1}, {2} neurons, and a total of {3} neurons".format(
+            n1, n2, n2, n1 + n2 + n2))
