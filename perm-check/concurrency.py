@@ -139,6 +139,7 @@ if USE_MP:
     err_ev = None
     workers = None
     print_lock = None
+    use_print_lock = True
 
 else:
     retn_l = None
@@ -173,7 +174,7 @@ def init(k : Callable[..., Any],
     ref_point = monotonic()
     
     if use_mp:
-        global manager, task_q, retn_q, evnt_q, exit_ev, workers, print_lock, err_ev
+        global manager, task_q, retn_q, evnt_q, exit_ev, workers, print_lock, err_ev, use_print_lock
         
         ctx = get_context(method=start_method)
         manager = ctx.Manager()
@@ -183,6 +184,7 @@ def init(k : Callable[..., Any],
         exit_ev = ctx.Event()
         err_ev = ctx.Event()
         print_lock = ctx.Lock()
+        use_print_lock = True
         
         
         workers = [ ctx.Process(    target = _worker, 
@@ -228,13 +230,14 @@ def stop():
     if not USE_MP:
         return
 
-    global exit_ev, evnt_q, task_q, retn_q, workers
+    global exit_ev, evnt_q, task_q, retn_q, workers, use_print_lock
 
     # If force stop has been set, force stop all workers
     if MP_FORCE_STOP:
         log("Force stopping all workers")
         for w in workers:
             w.terminate()
+        use_print_lock = False
         return
     
     # Else, send stop message and wait for them to stop
@@ -349,12 +352,14 @@ def log(s : str):
     t = monotonic() - ref_point
     
     if USE_MP:
-        global print_lock
-        print_lock.acquire()
+        global print_lock, use_print_lock
+        if use_print_lock:
+            print_lock.acquire()
         try:
             print("[ {0} ] {1}: {2}".format(t, current_process().name, s))
         finally:
-            print_lock.release()
+            if use_print_lock:
+                print_lock.release()
     else:
         print("[ {0} ] {1}".format(t, s))
 
