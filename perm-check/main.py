@@ -415,7 +415,7 @@ def kernel( *args): #task_id : TaskMessage, layer : int, *args : Any ) -> Any:
 
 
 # DEBUG
-n_cex_checks = 0
+n_cex_check_calls = 0
 
 def check_cex( cex, weights, bias, out_lp_m, out_lp_b ):
     """
@@ -423,8 +423,8 @@ def check_cex( cex, weights, bias, out_lp_m, out_lp_b ):
     cex, returns joint output, else returns None.
     """
     # DEBUG
-    global n_cex_checks
-    n_cex_check += 1
+    global n_cex_check_calls
+    n_cex_chec_calls += 1
     
     x = np.copy(cex)
     
@@ -859,9 +859,9 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 log("Unknown return message {0}".format(msg))
       
         #DEBUG
-        global n_cex_check
+        global n_cex_check_calls
         log("Main process coordination loop has stopped, {0}, {1}, {2}, {3}".format(
-                    pf_remaining, pb_remaining, n_incl_check, n_cex_check))
+                    pf_remaining, pb_remaining, n_incl_check, n_cex_check_calls))
        
         # If we failed to find a proof or a cex, return inconclusive
         stop()
