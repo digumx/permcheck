@@ -188,8 +188,7 @@ def init(k : Callable[..., Any],
         workers = [ ctx.Process(    target = _worker, 
                                     args = (    k, task_q, retn_q, evnt_q, exit_ev, ref_point,
                                                 print_lock, err_ev ),
-                                    name = "WORKER {0}".format(i),
-                                    daemon = True
+                                    name = "WORKER {0}".format(i)
                                 ) for i in range(n_workers) ]
         
     else:
@@ -231,20 +230,23 @@ def stop():
 
     global exit_ev, evnt_q, task_q, retn_q, workers
 
+    # If force stop has been set, force stop all workers
     if MP_FORCE_STOP:
         log("Force stopping all workers")
         for w in workers:
             w.terminate()
         return
     
-    # Send stop message
-    exit_ev.set()
-    
-    # Wait for all processes to give EXIT message. This clears event queue TODO timeout
-    for _ in workers:
-        assert evnt_q.get() == ChildEvent.EXIT
-    
-    log("All workers have sent exit message") #DEBUG
+    # Else, send stop message and wait for them to stop
+    else:
+        # Send stop message
+        exit_ev.set()
+        
+        # Wait for all processes to give EXIT message. This clears event queue TODO timeout
+        for _ in workers:
+            assert evnt_q.get() == ChildEvent.EXIT
+        
+        log("All workers have sent exit message") #DEBUG
     
     # Clear task queue.
     while True: # TODO timeout
@@ -262,22 +264,23 @@ def stop():
     
     log("All ques clear") #DEBUG
     
-    # Join with all processes, or terminate them
-    
-    for i, w in enumerate(workers):
-        ret = w.join(timeout = MP_JOIN_TO)
-        if ret is None:
-            log("Join timed out, terminating worker")
-            w.terminate()
-        log("Workers {0} of {0} joined with".format(i, len(workers)))
-    
-    log("All workers have been joined with") #DEBUG
+    # If all processes have not been force stopped, join with all processes, or terminate them
+    if not MP_FORCE_STOP:
+        for i, w in enumerate(workers):
+            ret = w.join(timeout = MP_JOIN_TO)
+            if ret is None:
+                log("Join timed out, terminating worker")
+                w.terminate()
+            log("Workers {0} of {0} joined with".format(i, len(workers)))
+        
+        log("All workers have been joined with") #DEBUG
     
     # Close all processes
     #for w in workers: #TODO this hangs, figure why
     #    w.close()
-    
-    log("All workers have been closed") #DEBUG
+    #log("All workers have been closed") #DEBUG
+
+    log("Multiprocess stopped")
     
 
 def add_task(tsk):

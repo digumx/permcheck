@@ -15,6 +15,7 @@ from scipy.linalg import lstsq, null_space
 
 from postcondition import LinearPostcond
 from global_consts import CEX_PULLBACK_NUM_PULLBACKS, CEX_PULLBACK_SAMPLES_SCALE
+from global_consts import CEX_PULLBACK_MAX_SAMPLES
 from global_consts import FLOAT_RTOL, FLOAT_ATOL, SCIPY_LSTSQ_METHOD, NUMPY_SORT_METHOD
 from global_consts import SCIPY_LINPROG_METHOD
 from concurrency import log
@@ -24,6 +25,7 @@ from concurrency import log
 def pullback_cex(   cex : ArrayLike, postc : LinearPostcond, 
                     weights : ArrayLike, bias : ArrayLike, 
                     n_pullbacks : int = CEX_PULLBACK_NUM_PULLBACKS,
+                    max_samples : int = CEX_PULLBACK_MAX_SAMPLES,
                     samples_scale : int = CEX_PULLBACK_SAMPLES_SCALE ) -> list[ArrayLike] :
     """
     Pulls a cex back over layer to a LinearPostcond. Returns a list of points which may or may not
@@ -41,6 +43,7 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
     weights,        -   The weights and bias over the DNN layer over which to pull back.
     bias
     n_pullbacks     -   The number of pullbacks to return.
+    max_samples     -   The maximum number of samples to draw.
     samples_scale   -   A mutliplier for the number of random samples to perform. The actual number
                         is this times the sum of the dimensions of the involved layers.
                     
@@ -58,6 +61,7 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
     
     # Get the samples
     log("Sampling {0} samples".format(samples_scale * n))
+    n_samps = min(samples_scale * n, max_samples)
     samples = rand(samples_scale * n , postc.reg_dim)
     
     # Score the samples
