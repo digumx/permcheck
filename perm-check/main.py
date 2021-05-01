@@ -287,9 +287,9 @@ class PriorityPreScheduler:
         # Schedule task
         self._n_scheduled += 1
         _, _, tsk = heappop(self._pqueue)
-        log("Scheduling task {0} across layer {1}, {2} already scheduled, {3} in que".format(
-            tsk[0], tsk[1], self._n_scheduled, len(self._pqueue)))
         add_task( tsk )
+        log("Prescheduler: Scheduled task {0} across layer {1}, {2} already scheduled, {3} in que".format(
+            tsk[0], tsk[1], self._n_scheduled, len(self._pqueue)))
         
     def task_done(self):
         """
@@ -298,7 +298,7 @@ class PriorityPreScheduler:
         # Reduce the count
         self._n_scheduled -= 1
         if self._n_scheduled < 0: self._n_scheduled = 0
-        log("Task stopped, {0} scheduled, {1} waiting".format(self._n_scheduled, len(self._pqueue)))
+        log("Prescheduler: Task stopped, {0} scheduled, {1} waiting".format(self._n_scheduled, len(self._pqueue)))
 
         # Schedule next task
         self._schedule_next()
@@ -309,7 +309,7 @@ class PriorityPreScheduler:
         priority queue
         """
 
-        log("Scheduling task {0} across layer {1} with priority {4}, {2} already scheduled, {3} in que".format(
+        log("Prescheduler: Queing task {0} across layer {1} with priority {4}, {2} already scheduled, {3} in que".format(
             tsk[0], tsk[1], self._n_scheduled, len(self._pqueue), prio))
         
         # Set up task and add it to queue
@@ -424,7 +424,7 @@ def check_cex( cex, weights, bias, out_lp_m, out_lp_b ):
     """
     # DEBUG
     global n_cex_check_calls
-    n_cex_chec_calls += 1
+    n_cex_check_calls += 1
     
     x = np.copy(cex)
     
@@ -762,7 +762,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Schedule pullback for each returned counterexample
                 else:
                     for cex in cexes:
-                        log("Pre-scheduling pullback of cex candidate across combined layer")
+                        log("Pre-scheduling pullback of cex candidate across combined layer from {0}".format(
+                                layer))
                         cex_psched.add_task(( TaskMessage.CEX_PB_LAYER, layer, cex, 
                                                 postconds[layer * 2 - 1], weights[layer], 
                                                 biases[layer], n_pb_per_layer ), 1 - layer*2)
@@ -787,7 +788,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Else, continue layer pullback
                 else:
                     for cex in cexes:
-                        log("Pre-scheduling pullback of cex candidate across combined layer")
+                        log("Pre-scheduling pullback of cex candidate across combined layer from {0}".format(
+                                layer-1))
                         cex_psched.add_task(( TaskMessage.CEX_PB_LAYER, layer-1, cex,
                                                 postconds[layer*2 - 3], weights[layer-1],
                                                 biases[layer-1], n_pb_per_layer ), 3 - 2*layer)
@@ -838,7 +840,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 
                 # If cex is none, do nothing further
                 if cex is None:
-                    log("No cex returned from pullback over linear layer")
+                    log("No cex returned from pullback over relu layer")
                     continue
                 
                 # If next layer is 0, shedule linear pullbacks
@@ -849,7 +851,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 
                 # Else, continue layer pullback
                 else:
-                    log("Scheduling pullback of cex candidate across combined layer")
+                    log("Scheduling pullback of cex candidate across combined layer from {0}".format(
+                            layer-1))
                     cex_psched.add_task(( TaskMessage.CEX_PB_LAYER, layer-1, cex, 
                                             postconds[layer*2 - 3], weights[layer-1],
                                             biases[layer-1], n_pb_per_layer ), 3 - 2*layer)
