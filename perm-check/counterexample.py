@@ -62,7 +62,7 @@ def pullback_cex(   cex : ArrayLike, postc : LinearPostcond,
     # Get the samples
     log("Sampling {0} samples".format(samples_scale * n))
     n_samps = min(samples_scale * n, max_samples)
-    samples = rand(samples_scale * n , postc.reg_dim)
+    samples = rand(n_samps , postc.reg_dim)
     
     # Score the samples
     log("Scoring {0} samples".format(samples.shape[0]))
