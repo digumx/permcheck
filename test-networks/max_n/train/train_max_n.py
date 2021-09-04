@@ -23,7 +23,7 @@ import sys
 
 from numpy import array, newaxis, argmax, zeros
 from numpy.random import randint
-from torch import full, as_tensor, transpose, float32
+from torch import full, as_tensor, transpose
 from torch.optim import SGD, Adam
 from torch.nn import Module, Linear, ReLU, MSELoss, init
 from torch.utils.data import TensorDataset, DataLoader
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
     # Make a DataLoader
     print("Making a loader")
-    dset = TensorDataset(as_tensor(data, dtype=float32), as_tensor(out, dtype=float32))
+    dset = TensorDataset(as_tensor(data), as_tensor(out))
     dloader = DataLoader(dset, batch_size)
     
     # Get the model, loss and optimizer

@@ -8,6 +8,7 @@ from typing import Any, Union
 from math import floor
 from heapq import heappush, heappop
 from traceback import format_exc
+from time import perf_counter
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -87,6 +88,7 @@ class PermCheckReturnStruct:
     Members:
     
     kind                -   The kind of return that happened, proof, cex or inconclusive
+    time                -   The seconds taken to reach the conclusion
     
     If the kind is 'proof', the follwing are present:
     
@@ -107,12 +109,13 @@ class PermCheckReturnStruct:
     
     trace               -   A traceback that caused the error, useful for debugging purposes
     """
-    def __init__(self, kind : PermCheckReturnKind, *args):
+    def __init__(self, kind : PermCheckReturnKind, time : float, *args):
         """
         Args should init other members depending on what kind is, see above. 
         """
         log("Constructing return struct")
         self.kind = kind
+        self.time = time
         
         if self.kind == PermCheckReturnKind.PROOF:
             self.postconds, self.pre_relu_pconds, self.pre_linear_pconds, self.incl_layer = args
@@ -130,26 +133,28 @@ class PermCheckReturnStruct:
         Print out a short summary of the proof or counterexample situation
         """
         if self.kind == PermCheckReturnKind.INCONCLUSIVE:
-            return "PermCheck has returned INCONCLUSIVE"
+            return "PermCheck has returned INCONCLUSIVE in {0}".format( self.time )
         
         elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
-            return "PermCheck has found {0} COUNTEREXAMPLES".format(len(self.counterexamples))
+            return "PermCheck has found {0} COUNTEREXAMPLES in {1}".format(
+                    len(self.counterexamples), self.time )
         
         elif self.kind == PermCheckReturnKind.PROOF:
-            return "PermCheck has successfully PROVED via inclusion at layer {0}".format(
-                                                                            self.incl_layer)
+            return "PermCheck has successfully PROVED via inclusion at layer {0} in {1}".format(
+                                                                    self.incl_layer, self.time )
         elif self.kind == PermCheckReturnKind.ERROR:
-            return "PermCheck has encountered an unhandled exception"
+            return "PermCheck has encountered an unhandled exception after {0}".format( self.time )
 
     def __repr__(self):
         """
         Print all details of proof, or all counterexamples.
         """
         if self.kind == PermCheckReturnKind.INCONCLUSIVE:
-            return "PermCheck has returned INCONCLUSIVE"
+            return "PermCheck has returned INCONCLUSIVE in {0}".format( self.time )
 
         elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
-            s = "PermCheck has found {0} COUNTEREXAMPLES: \n".format(len(self.counterexamples))
+            s = "PermCheck has found {0} COUNTEREXAMPLES in {1}: \n".format(
+                    len(self.counterexamples), self.time )
             for i, (x, sx, nx, snx, nsx) in enumerate(self.counterexamples):
                 s += "\nCounterexample {0}:\n".format(i)
                 s += "    Input:                            {0}\n".format(x.tolist())
@@ -160,8 +165,8 @@ class PermCheckReturnStruct:
             return s
         
         elif self.kind == PermCheckReturnKind.PROOF:
-            s = "PermCheck has successfully PROVED via inclusion at layer {0}: \n".format(
-                                                                            self.incl_layer)
+            s = "PermCheck has successfully PROVED via inclusion at layer {0} in {1}: \n".format(
+                                                                    self.incl_layer, self.time )
             
             # Print the first postcondition
             s += "\nThe input joint vectors are given by:\n a @ {0} + {1}\n".format(
@@ -241,8 +246,8 @@ class PermCheckReturnStruct:
             return s
         
         elif self.kind == PermCheckReturnKind.ERROR:
-            return "\n\nPermCheck has encountered an unhandled exception: \n\n {0}".format(
-                    self.trace)
+            return "\n\nPermCheck has encountered an unhandled exception in {1}: \n\n {0}".format(
+                    self.trace, self.time )
 
 
 
@@ -543,6 +548,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     # Start workers.
     log("Starting algo for {0} layers".format(n_layers))
     start()
+    start_time = perf_counter()
     
     try:
         
@@ -571,7 +577,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         ret = check_cex(inp_c, weights, biases, out_lp_m, out_lp_b)
         if ret is not None:
             log("Center point is a counterexample")
-            return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
+            return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
                     [(inp_c[:n_inputs], inp_c[n_inputs:], ret[:n_outputs], ret[post_perm],
                     ret[n_outputs:])])
         
@@ -702,7 +708,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 if len(cexes) == 0:  
                     log("Found proof via inclusion just before linear layer {0}".format(layer))
                     stop()
-                    return PermCheckReturnStruct( PermCheckReturnKind.PROOF, 
+                    return PermCheckReturnStruct( PermCheckReturnKind.PROOF, perf_counter()-start_time,
                             postconds[:2*layer+1], pre_relu_pconds[layer:], pre_linear_pconds[layer:],
                             layer)
                 
@@ -720,7 +726,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                         if ret is not None:
                             log("Found cex from inclusion in position 0")
                             stop()
-                            return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE,
+                            return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
                                     [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                     ret[n_outputs:])])
                         else:
@@ -743,7 +749,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 if len(cexes) == 0:  
                     log("Found proof via inclusion just before ReLU layer {0}".format(layer))
                     stop()
-                    return PermCheckReturnStruct( PermCheckReturnKind.PROOF, 
+                    return PermCheckReturnStruct( PermCheckReturnKind.PROOF,  perf_counter()-start_time,
                             postconds[:(layer+1)*2], pre_relu_pconds[layer:],
                             pre_linear_pconds[layer+1:], layer)
                 
@@ -817,7 +823,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                     if ret is not None:
                         log("Found cex that has been pulled back")
                         stop()
-                        return PermCheckReturnStruct(PermCheckReturnKind.COUNTEREXAMPLE,
+                        return PermCheckReturnStruct(PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
                                 [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                 ret[n_outputs:])])
                     else:
@@ -868,14 +874,14 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
        
         # If we failed to find a proof or a cex, return inconclusive
         stop()
-        return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE )
+        return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE, perf_counter()-start_time )
    
     except:
         stop()
         log("Unhandled exception in main process:")
         trace = format_exc()
         log(trace)
-        return PermCheckReturnStruct( PermCheckReturnKind.ERROR, trace )
+        return PermCheckReturnStruct( PermCheckReturnKind.ERROR, perf_counter()-start_time, trace )
    
    
     
