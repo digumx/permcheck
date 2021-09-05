@@ -592,8 +592,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         n_cex_check = 0             # Number of cex checks done
         while pf_remaining or pb_remaining or n_incl_check < n_pos or cex_psched.is_active():
           
-            #log("while, {0}".format((pf_remaining, pb_remaining, n_incl_check < n_pos, n_cex_check <
-            #    num_cexes, n_cex_check, num_cexes))) #DEBUG
+            log("while, {0}".format((pf_remaining, pb_remaining, n_incl_check < n_pos, cex_psched.is_active() ))) #DEBUG
 
             # Throw error if any worker has failed.
             if any_error():
