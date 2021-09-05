@@ -17,7 +17,7 @@ from postcondition import LinearPostcond
 from global_consts import CEX_PULLBACK_NUM_PULLBACKS, CEX_PULLBACK_SAMPLES_SCALE
 from global_consts import CEX_PULLBACK_MAX_SAMPLES
 from global_consts import FLOAT_RTOL, FLOAT_ATOL, SCIPY_LSTSQ_METHOD, NUMPY_SORT_METHOD
-from global_consts import SCIPY_LINPROG_METHOD
+from global_consts import SCIPY_LINPROG_METHOD, SCIPY_LINPROG_MAXITER, SCIPY_LINPROG_EXCLAIM
 from concurrency import log
 
 
@@ -113,6 +113,7 @@ def pullback_cex_linear( cex : ArrayLike, postc : LinearPostcond, weights : Arra
     point if found, else returns none
     """
     # TODO remove
+    log("Checking asserts")
     assert cex.ndim == 1
     assert weights.ndim == 2
     assert bias.ndim == 1
@@ -121,11 +122,13 @@ def pullback_cex_linear( cex : ArrayLike, postc : LinearPostcond, weights : Arra
     assert postc.num_neuron == weights.shape[0]
     
     # Run linear program
+    log("Running LP")
     res = linprog(c = np.zeros((postc.reg_dim)), A_ub = None, b_ub = None, 
                     A_eq = np.transpose( postc.basis @ weights ), 
                     b_eq = cex - bias - postc.center @ weights,
                     bounds = (-1, 1),
-                    method = SCIPY_LINPROG_METHOD )
+                    method = SCIPY_LINPROG_METHOD,
+                    options = {'maxiter' : SCIPY_LINPROG_MAXITER})
     
     # Analyze result
     if res.status == 0:
@@ -134,11 +137,13 @@ def pullback_cex_linear( cex : ArrayLike, postc : LinearPostcond, weights : Arra
 
     elif res.status == 1 or res.status == 2:
         log("Pullback failed, preimage of point does not intersect postcondition")
-        return None
     
-    else:
+    elif SCIPY_LINPROG_EXCLAIM:
         raise RuntimeError("Unexpected return status from linear solver: {0}".format(res.status))
+    else:
+        log("Unexpected return status from linear solver: {0}".format(res.status))
 
+    return None
     
 def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLike, None ]:
     """
@@ -169,7 +174,8 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
     # Run linear program
     res = linprog(np.zeros((A_ub.shape[1])), A_ub, b_ub, A_eq, b_eq,
                     bounds = (-1, 1),
-                    method = SCIPY_LINPROG_METHOD )
+                    method = SCIPY_LINPROG_METHOD,
+                    options = {'maxiter' : SCIPY_LINPROG_MAXITER})
     
     # Analyze result
     if res.status == 0:
@@ -178,11 +184,13 @@ def pullback_cex_relu(cex : ArrayLike, postc : LinearPostcond) -> Union[ ArrayLi
 
     elif res.status == 1 or res.status == 2:
         log("Pullback failed, preimage of point does not intersect postcondition")
-        return None
     
-    else:
+    elif SCIPY_LINPROG_EXCLAIM:
         raise RuntimeError("Unexpected return status from linear solver: {0}".format(res.status))
+    else:
+        log("Unexpected return status from linear solver: {0}".format(res.status))
     
+    return None
 
 
 if __name__ == "__main__":

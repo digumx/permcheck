@@ -13,7 +13,8 @@ from scipy.linalg import null_space
 
 from postcondition import LinearPostcond
 from precondition import DisLinearPrecond, NegSideType
-from global_consts import FLOAT_RTOL, FLOAT_ATOL, SCIPY_LINPROG_METHOD
+from global_consts import FLOAT_RTOL, FLOAT_ATOL
+from global_consts import SCIPY_LINPROG_METHOD, SCIPY_LINPROG_MAXITER, SCIPY_LINPROG_EXCLAIM
 from concurrency import log
 
 
@@ -41,7 +42,7 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
         
         #inner_bounds = (-1, 1) #DEBUG
         res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
-                method = SCIPY_LINPROG_METHOD)      # Call optimizer
+                method = SCIPY_LINPROG_METHOD, options = {'maxiter' : SCIPY_LINPROG_MAXITER})      # Call optimizer
         
         if res.status == 2:    # Inner is infeasable
             log("Infeasable inner") #DEBUG
@@ -57,7 +58,8 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
             log("Linear optimizer returned bad status: {0}, retrying with no presolve".format(res.status))
             
             res = linprog(-c, inner_ub_a, inner_ub_b, inner_eq_a, inner_eq_b, bounds = inner_bounds,
-                    method = SCIPY_LINPROG_METHOD, options = {'presolve' : False}) # Call optimizer
+                    method = SCIPY_LINPROG_METHOD, options = {'presolve' : False, 'maxiter' :
+                        SCIPY_LINPROG_MAXITER}) # Call optimizer
             
             if res.status == 2:    # Inner is infeasable
                 log("Infeasable inner") #DEBUG
@@ -69,8 +71,11 @@ def check_lp_inclusion( inner_ub_a: MbArrayLike, inner_ub_b: MbArrayLike,
                     if len(l_cex) >= n_cex:
                         break
         
-            else:
+            elif SCIPY_LINPROG_EXCLAIM:
                 raise RuntimeError("Optimizer returned bad status: {0}, exit message {2}, bounds were {1}".format(
+                    res.status, inner_bounds, res.message))
+            else:
+                log("Optimizer returned bad status: {0}, exit message {2}, bounds were {1}".format(
                     res.status, inner_bounds, res.message))
     
     log(f"Lp check leaves with {len(l_cex)} cexes")

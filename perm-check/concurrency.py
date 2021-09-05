@@ -20,7 +20,6 @@ if USE_MP:
     import signal
 
 
-if USE_MP:
     
     class ChildEvent:
         """

@@ -479,6 +479,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     num_cexes           -   If given, specifies the number of counterexample candidates to look for.
     num_workers         -   The number of worker processes to pass
     """
+    start_time = perf_counter()
     
     # Initialize workers
     init(kernel, n_workers = num_workers)
@@ -548,7 +549,6 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
     # Start workers.
     log("Starting algo for {0} layers".format(n_layers))
     start()
-    start_time = perf_counter()
     
     try:
         

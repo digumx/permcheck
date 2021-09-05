@@ -31,7 +31,18 @@ class ScipyLinprogMethod(Enum):
     ACC_SIMPLEX = 'revised simplex' # A more accurate legacy simplex
     LEG_SIMPLEX = 'simplex'         # The legacy simplex implementation
 
-SCIPY_LINPROG_METHOD = ScipyLinprogMethod.HIGHS_IPM.value    # Must be one of the above
+SCIPY_LINPROG_METHOD = ScipyLinprogMethod.HIGHS_AUTO.value    # Must be one of the above
+
+"""
+The following sets the maximum number of iterations for the scipy linprog solver
+"""
+SCIPY_LINPROG_MAXITER = 100000
+
+"""
+If the following is set to true, an exception is raised when an unexpected return is obtained from
+linprog
+"""
+SCIPY_LINPROG_EXCLAIM = False
 
 
 class ScipySVDMethod(Enum):
@@ -109,9 +120,10 @@ USE_MP = True
 
 """
 The method used to spawn the worker processes, if None, the default method or the one set globally
-by the parent process is used. Default is "spawn" for best portabitily and flexibility.
+by the parent process is used. Default is "spawn" for best portabitily and flexibility. "fork" is
+used during benchmarking.
 """
-MP_START_METHOD = "spawn"
+MP_START_METHOD = "fork"
 
 """
 Number of workers to use. The actual number of processes will be more than this, but all the extra
