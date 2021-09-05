@@ -577,6 +577,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         ret = check_cex(inp_c, weights, biases, out_lp_m, out_lp_b)
         if ret is not None:
             log("Center point is a counterexample")
+            stop()
             return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
                     [(inp_c[:n_inputs], inp_c[n_inputs:], ret[:n_outputs], ret[post_perm],
                     ret[n_outputs:])])
