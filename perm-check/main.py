@@ -590,7 +590,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
         pb_remaining = True         # Is pullbacks all done
         n_incl_check = 0            # Number of inclusion checks performed
         n_cex_check = 0             # Number of cex checks done
-        while pf_remaining or pb_remaining or n_incl_check < n_pos or cex_psched.is_active():
+        n_incl_pos = n_pos          # Number of positions where inclusion can be checked
+        while pf_remaining or pb_remaining or n_incl_check < n_incl_pos or cex_psched.is_active():
           
             log("while, {0}".format((pf_remaining, pb_remaining, n_incl_check < n_pos, cex_psched.is_active() ))) #DEBUG
 
@@ -654,6 +655,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                 # Quit if no pullback was found
                 if data[0] is None:
                     log("No pullback found at layer {0}".format(layer))
+                    pb_remaining = False
+                    n_incl_pos -= n_pos
                     continue         # Do not stop if pullback failed, TODO branch
                     #stop()
                     #return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE )

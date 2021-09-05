@@ -234,9 +234,9 @@ def stop():
 
     # If force stop has been set, force stop all workers
     if MP_FORCE_STOP:
-        log("Force stopping all workers")
+        log("Force stopping all workers using SIGKILL")
         for w in workers:
-            w.terminate()
+            w.kill()
         use_print_lock = False
         return
     
