@@ -242,11 +242,16 @@ def pull_back_constr_relu(ms: list[ArrayLike], bs: list[ArrayLike], point: Array
                 continue
         log("Zero not in region")
         
+        ## Else, check if pullback has point, else return none
+        #c = DisLinearPrecond(m, b, neg_side_type = NegSideType.QUAD, neg_side_quad = quad)
+        #if ( np.all(point @ m <= b) if ap else np.all(point @ c.neg_m <= c.neg_b) ):
+        #    out_l.append(c)
+        #    continue
+        # log("Quad pullback does not have point")
+
         # Else, do quad pullback
         c = DisLinearPrecond(m, b, neg_side_type = NegSideType.QUAD, neg_side_quad = quad)
-        if ( np.all(point @ m <= b) if ap else np.all(point @ c.neg_m <= c.neg_b) ):
-            out_l.append(c)
-        log("Quad pullback does not have point")
+        out_l.append(c)
 
     return out_l
 
