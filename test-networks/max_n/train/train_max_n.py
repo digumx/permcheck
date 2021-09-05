@@ -23,6 +23,7 @@ import sys
 
 from numpy import array, newaxis, argmax, zeros
 from numpy.random import randint
+import torch
 from torch import full, as_tensor, transpose
 from torch.optim import SGD, Adam
 from torch.nn import Module, Linear, ReLU, MSELoss, init
@@ -48,11 +49,11 @@ class MaxN(Module):
         self.n = num_inp
         self.n2 = num_inp * (num_inp - 1)
         self.n1 = self.n2 * 2
-        self.l1 = Linear(self.n, self.n1)
+        self.l1 = Linear(self.n, self.n1, dtype=torch.double)
         self.r1 = ReLU()
-        self.l2 = Linear(self.n1, self.n2)
+        self.l2 = Linear(self.n1, self.n2, dtype=torch.double)
         self.r2 = ReLU()
-        self.l3 = Linear(self.n2, self.n)
+        self.l3 = Linear(self.n2, self.n, dtype=torch.double)
         self.r3 = ReLU()
         
         # Init all weights and biases to 0.

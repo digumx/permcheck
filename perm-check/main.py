@@ -624,7 +624,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             
            
             # If message says a pushforward is done, que the next if available, or set flags
-            if msg == ReturnMessage.PUSH_F_RELU_DONE:
+            elif msg == ReturnMessage.PUSH_F_RELU_DONE:
 
                 # Get the postcond
                 pcidx = 2 * (layer+1)           # where the next postcond will go
