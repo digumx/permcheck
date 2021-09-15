@@ -889,6 +889,11 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
    
     
 if __name__ == "__main__":
+    """
+    Calling this as a script gives a very simple cli to check a .spec file:
+    
+    python main.py <spec_file> <number_of_worker_processes> [output_file]
+    """
 
     import sys
     
@@ -920,37 +925,3 @@ if __name__ == "__main__":
             f.write(repr(ret))
         
         
-    #if len(sys.argv) < 3:
-    #    print("Usage: `python main.py <number_of_worker_processes>` `<unit-name>`")
-    #    exit(-1)
-    #    
-    #if sys.argv[2] == 'safe':
-    #
-    #    weights = [ np.array(   [[1000, -1000, 1000, -1000],
-    #                             [-1000, 1000, -1000, 1000]] ),
-    #                np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
-    #    biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
-    #    sig = [1, 0]
-    #    
-    #    ret = main(weights, biases, sig, np.array([0, 0]), np.array([1,1]), sig, 0.1,
-    #                num_workers = int(sys.argv[1]))
-    #    
-    #    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
-    #    print("\n\nDetails:\n\n")
-    #    print(repr(ret))
-    #
-    #elif sys.argv[2] == 'cex':
-    #    
-    #    weights = [ np.array(   [[1000, -1000, 1000, -1000],
-    #                             [-1000, 1000, -1000, 1000]] ),
-    #                np.array(   [[1, 0], [0, 1], [-1, 0], [0, -1]] )]
-    #    biases = [ np.array( [0, 0, -1, -1] ), np.array( [0, 0] ) ]
-    #    sigI = [1, 0]
-    #    sigO = [0, 1]
-    #    
-    #    ret = main(weights, biases, sigI, np.array([0, 0]), np.array([1,1]), sigO, 0.1,
-    #                num_workers = int(sys.argv[1]))
-    #    
-    #    print("\n\nReturned {1}: {0}".format(str(ret), ret.kind.value))
-    #    print("\n\nDetails:\n\n")
-    #    print(repr(ret))
