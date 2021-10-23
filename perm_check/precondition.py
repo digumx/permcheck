@@ -4,7 +4,7 @@ neural network.
 """
 
 
-from typing import Union
+from typing import Union, Tuple
 from enum import Enum, auto
 
 import numpy as np
@@ -149,7 +149,7 @@ class DisLinearPrecond:
             
         return "DisLinearPrecond({0})".format(repr(d))
     
-    def get_pos_constrs(self) -> tuple[ArrayLike, ArrayLike]:
+    def get_pos_constrs(self) -> Tuple[ArrayLike, ArrayLike]:
         """
         Returns the complete set of constraints capturing the positive side behavior of the
         postcondition. Returns a pair `(m, b)`, so that the positive side region is given by
@@ -166,7 +166,7 @@ class DisLinearPrecond:
    
         return (m, b)
     
-    def get_neg_constrs(self) -> Union[tuple[ArrayLike, ArrayLike], None]:
+    def get_neg_constrs(self) -> Union[Tuple[ArrayLike, ArrayLike], None]:
         """
         Returns the complete set of constraints capturing the negative side behavior of the
         postcondition. Returns a pair `(m, b)`, so that the negative side region is given by
@@ -257,7 +257,7 @@ def pull_back_constr_relu(ms: list[ArrayLike], bs: list[ArrayLike], point: Array
 
 
 def pull_back_precond_linear(prec: DisLinearPrecond, weights: ArrayLike, biases: ArrayLike 
-                                                ) -> tuple[list[ArrayLike], list[ArrayLike]]:
+                                                ) -> Tuple[list[ArrayLike], list[ArrayLike]]:
     """
     Pulls back given DisLinearPrecond across a linear layer, and returns a lit of lps. Each lp is
     given by x @ m <= b, and the list of ms and bs are returned.
