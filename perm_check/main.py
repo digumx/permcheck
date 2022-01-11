@@ -18,7 +18,7 @@ from .postcondition import LinearPostcond, push_forward_postcond_linear, push_fo
 from .precondition import DisLinearPrecond, pull_back_constr_relu, pull_back_precond_linear
 from .inclusion import check_inclusion_pre_linear, check_inclusion_pre_relu
 from .counterexample import pullback_cex, pullback_cex_linear, pullback_cex_relu
-from .global_consts import MP_NUM_WORKER, CEX_PULLBACK_NUM_TOTAL_CANDIDATES_MULT
+from .global_consts import MP_NUM_WORKER, CEX_PULLBACK_NUM_TOTAL_CANDIDATES_MULT, DUMP_ATTEMPT
 
 
 @unique
@@ -109,23 +109,24 @@ class PermCheckReturnStruct:
     
     trace               -   A traceback that caused the error, useful for debugging purposes
     """
-    def __init__(self, kind : PermCheckReturnKind, time : float, *args):
+    def __init__(self, kind : PermCheckReturnKind, time : float, 
+                    postconds = None, 
+                    pre_relu_pconds = None, pre_linear_pconds = None, 
+                    incl_layer = None,
+                    counterexamples = None,
+                    trace = None):
         """
         Args should init other members depending on what kind is, see above. 
         """
         log("Constructing return struct")
         self.kind = kind
         self.time = time
-        
-        if self.kind == PermCheckReturnKind.PROOF:
-            self.postconds, self.pre_relu_pconds, self.pre_linear_pconds, self.incl_layer = args
-            
-        elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
-            self.counterexamples = args[0]
-            
-        elif self.kind == PermCheckReturnKind.ERROR:
-            self.trace = args[0]
-            
+        self.postconds = postconds
+        self.pre_relu_pconds = pre_relu_pconds
+        self.pre_linear_pconds = pre_linear_pconds
+        self.incl_layer = incl_layer
+        self.counterexamples = counterexamples
+        self.trace = trace
         log("Return struct constructed")
 
     def __str__(self):
@@ -145,12 +146,66 @@ class PermCheckReturnStruct:
         elif self.kind == PermCheckReturnKind.ERROR:
             return "PermCheck has encountered an unhandled exception after {0}".format( self.time )
 
+    def _get_postcond_str(self, i):
+        """
+        Return a string representation of i-th postcond
+        """
+        mat_l = self.postconds[i].basis.tolist()
+        s = "a @ [{0},\n".format(mat_l[0])
+        for row in mat_l[1:-1]:
+            s += "     {0},\n".format(row)
+        s += "     {0}]\n".format(mat_l[-1])
+        s += "  +  {0}\n".format(self.postconds[i].center.tolist())
+        return s
+
+    def _get_prelin_precond_str(self, pcond):
+        """
+        Get a nice string repr for a precond
+        """
+        s = "On the positive side:\n"
+        pm, pb = pcond
+        mat_l = pm.tolist()
+        s = "x @ [{0},\n".format(mat_l[0])
+        for row in mat_l[1:-1]:
+            s += "     {0},\n".format(row)
+        s += "     {0}]\n".format(mat_l[-1])
+        s += " <=  {0}\n".format(pb)
+        return s
+
+
+    def _get_prerel_precond_str(self, pcond):
+        """
+        Get a nice string repr for a precond
+        """
+        s = "On the positive side:\n"
+        pm, pb = pcond.get_pos_constrs()
+        mat_l = pm.tolist()
+        s = "x @ [{0},\n".format(mat_l[0])
+        for row in mat_l[1:-1]:
+            s += "     {0},\n".format(row)
+        s += "     {0}]\n".format(mat_l[-1])
+        s += " <=  {0}\n".format(pb)
+
+        r = pcond.get_neg_constrs()
+        if r is not None:
+            nm, nb = r
+            s += "Or satisfy on the negative side:\n"
+            mat_l = nm.tolist()
+            s = "x @ [{0},\n".format(mat_l[0])
+            for row in mat_l[1:-1]:
+                s += "     {0},\n".format(row)
+            s += "     {0}]\n".format(mat_l[-1])
+            s += " <=  {0}\n".format(nb)
+
+        return s
+        
+
     def __repr__(self):
         """
         Print all details of proof, or all counterexamples.
         """
         if self.kind == PermCheckReturnKind.INCONCLUSIVE:
-            return "PermCheck has returned INCONCLUSIVE in {0}".format( self.time )
+            s = "PermCheck has returned INCONCLUSIVE in {0}".format( self.time )
 
         elif self.kind == PermCheckReturnKind.COUNTEREXAMPLE:
             s = "PermCheck has found {0} COUNTEREXAMPLES in {1}: \n".format(
@@ -162,7 +217,6 @@ class PermCheckReturnStruct:
                 s += "    Output from Input:                {0}\n".format(nx.tolist())
                 s += "    Permutation of Output from Input: {0}\n".format(snx.tolist())
                 s += "    Output from Permuted Input:       {0}\n".format(nsx.tolist())
-            return s
         
         elif self.kind == PermCheckReturnKind.PROOF:
             s = "PermCheck has successfully PROVED via inclusion at layer {0} in {1}: \n".format(
@@ -180,13 +234,12 @@ class PermCheckReturnStruct:
                 
                 # After linear layer
                 s += "\nWhich leads to values after the linear layer {0} of form:\n".format(l)
-                s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis.tolist(),
-                        self.postconds[2*l+1].center.tolist())
+                s += self._get_postcond_str(2*l+1)
 
                 # After ReLU
                 s += "\nWhich leads to values after the ReLU layer {0} of form:\n".format(l)
-                s += "a @ {0} + {1}\n".format(self.postconds[2*l+2].basis.tolist(),
-                        self.postconds[2*l+2].center.tolist())
+                s += self._get_postcond_str(2*l+2)
+
                 l += 1
                 
                 
@@ -197,18 +250,11 @@ class PermCheckReturnStruct:
                 
                 # Print postcondition
                 s += "\nWhich leads to values after the linear layer {0} of form:\n".format(l)
-                s += "a @ {0} + {1}\n".format(self.postconds[2*l+1].basis.tolist(),
-                        self.postconds[2*l+1].center.tolist())
+                s += self._get_postcond_str(2*l+1)
                 
                 # Print precondition
-                pm, pb = prlu_pcs[0].get_pos_constrs()
                 s += "\nEach of which satisfy:\n"
-                s += "x @ {0} <= {1}\n".format(pm.tolist(), pb.tolist())
-                r = prlu_pcs[0].get_neg_constrs()
-                if r is not None:
-                    nm, nb = r
-                    s += "    Or satisfy:\n"
-                    s += "x @ {0} <= {1}\n".format(nm, nb)
+                s += self._get_prerel_precond_str(prlu_pcs[0]) 
                 
                 # Adjust pre-relu preconds
                 prlu_pcs = prlu_pcs[1:]
@@ -219,36 +265,58 @@ class PermCheckReturnStruct:
             for prlu, plin in zip(prlu_pcs, self.pre_linear_pconds):
                 
                 # Print the pre-linear precond
-                m, b = plin
                 s += "\nEach of which give values before the linear layer {0} that satisfy:\n".format(l)
-                s += "x @ {0} <= {1}\n".format(m.tolist(), b.tolist())
+                s += self._get_prelin_precond_str(plin)
                 
                 # Print the pre-relu precond
-                pm, pb = prlu.get_pos_constrs()
                 s += "\nEach of are values after the linear layer {0} that satisfy:\n".format(l)
-                s += "x @ {0} <= {1}\n".format(pm.tolist(), pb.tolist())
-                r = prlu.get_neg_constrs()
-                if r is not None:
-                    nm, nb = r
-                    s += "    Or satisfy:\n"
-                    s += "x @ {0} <= {1}\n".format(nm.tolist(), nb.tolist())
+                s += self._get_prerel_precond_str(prlu)
 
                 l += 1
                     
 
             # Print the output condition
-            m, b = self.pre_linear_pconds[-1]
             s += "\nEach of which give values before the linear layer {0} that satisfy:\n".format(l)
-            s += "x @ {0} <= {1}\n".format(m.tolist(), b.tolist())
+            s += self._get_prelin_precond_str(self.pre_linear_pconds[-1])
             
             s += "\nWhich characterizes the output condition"
 
-            return s
         
         elif self.kind == PermCheckReturnKind.ERROR:
-            return "\n\nPermCheck has encountered an unhandled exception in {1}: \n\n {0}".format(
+            s = "\n\nPermCheck has encountered an unhandled exception in {1}: \n\n {0}".format(
                     self.trace, self.time )
 
+        if DUMP_ATTEMPT:
+            s += "\n\n====== DUMP =====\n"
+            
+            if self.postconds is not None:
+                for i in range(len(self.postconds)):
+                    s += "\nPostcond {0}:\n".format(i)
+                    s += self._get_postcond_str(i)
+            
+            if self.pre_relu_pconds is not None:
+                for i, pcond in enumerate(self.pre_relu_pconds):
+                    s += "\nPre-Relu Precondition {0}:\n".format(i)
+                    s += self._get_prerel_precond_str(pcond)
+            
+            if self.pre_linear_pconds is not None:
+                for i, pcond in enumerate(self.pre_linear_pconds):
+                    s += "\nPre-Linear Precondition {0}:\n".format(i)
+                    s += self._get_prelin_precond_str(pcond)
+
+            if self.incl_layer is not None:
+                s += "\nIncl Layer: {0}\n".format(self.incl_layer)
+
+            if self.counterexamples is not None:
+                for i, (x, sx, nx, snx, nsx) in enumerate(self.counterexamples):
+                    s += "\nCounterexample {0}:\n".format(i)
+                    s += "    Input:                            {0}\n".format(x.tolist())
+                    s += "    Permuted Input:                   {0}\n".format(sx.tolist())
+                    s += "    Output from Input:                {0}\n".format(nx.tolist())
+                    s += "    Permutation of Output from Input: {0}\n".format(snx.tolist())
+                    s += "    Output from Permuted Input:       {0}\n".format(nsx.tolist())
+
+        return s
 
 
 class PriorityPreScheduler:
@@ -579,7 +647,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
             log("Center point is a counterexample")
             stop()
             return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
-                    [(inp_c[:n_inputs], inp_c[n_inputs:], ret[:n_outputs], ret[post_perm],
+                    counterexamples = [(inp_c[:n_inputs], inp_c[n_inputs:], ret[:n_outputs], ret[post_perm],
                     ret[n_outputs:])])
         
         # Schedule pullback of out lp
@@ -712,8 +780,9 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                     log("Found proof via inclusion just before linear layer {0}".format(layer))
                     stop()
                     return PermCheckReturnStruct( PermCheckReturnKind.PROOF, perf_counter()-start_time,
-                            postconds[:2*layer+1], pre_relu_pconds[layer:], pre_linear_pconds[layer:],
-                            layer)
+                            postconds = postconds[:2*layer+1], pre_relu_pconds = pre_relu_pconds[layer:], 
+                            pre_linear_pconds = pre_linear_pconds[layer:],
+                            incl_layer = layer)
                 
                 n_incl_check += 1
                 
@@ -730,7 +799,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                             log("Found cex from inclusion in position 0")
                             stop()
                             return PermCheckReturnStruct( PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
-                                    [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
+                                    counterexample = [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                     ret[n_outputs:])])
                         else:
                             log("Not a cex, {0} of {1} checked".format(n_cex_check, num_cexes))
@@ -753,8 +822,8 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                     log("Found proof via inclusion just before ReLU layer {0}".format(layer))
                     stop()
                     return PermCheckReturnStruct( PermCheckReturnKind.PROOF,  perf_counter()-start_time,
-                            postconds[:(layer+1)*2], pre_relu_pconds[layer:],
-                            pre_linear_pconds[layer+1:], layer)
+                            postconds = postconds[:(layer+1)*2], pre_relu_pconds = pre_relu_pconds[layer:],
+                            pre_linear_pconds = pre_linear_pconds[layer+1:], incl_layer = layer)
                 
                 n_incl_check += 1
                 
@@ -827,7 +896,7 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
                         log("Found cex that has been pulled back")
                         stop()
                         return PermCheckReturnStruct(PermCheckReturnKind.COUNTEREXAMPLE, perf_counter()-start_time,
-                                [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
+                                counterexamples = [(cex[:n_inputs], cex[n_inputs:], ret[:n_outputs], ret[post_perm],
                                 ret[n_outputs:])])
                     else:
                         log("Not a cex, {0} of {1} checked".format(n_cex_check, num_cexes))
@@ -877,14 +946,19 @@ def main(   weights : list[ArrayLike], biases : list[ArrayLike],
        
         # If we failed to find a proof or a cex, return inconclusive
         stop()
-        return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE, perf_counter()-start_time )
+        return PermCheckReturnStruct( PermCheckReturnKind.INCONCLUSIVE, perf_counter()-start_time,
+                                        postconds = postconds, pre_relu_pconds = pre_relu_pconds,
+                                        pre_linear_pconds = pre_linear_pconds)
    
     except:
         stop()
         log("Unhandled exception in main process:")
         trace = format_exc()
         log(trace)
-        return PermCheckReturnStruct( PermCheckReturnKind.ERROR, perf_counter()-start_time, trace )
+        return PermCheckReturnStruct( PermCheckReturnKind.ERROR, perf_counter()-start_time, 
+                                        trace = trace,
+                                        postconds = postconds, pre_relu_pconds = pre_relu_pconds,
+                                        pre_linear_pconds = pre_linear_pconds )
    
    
     

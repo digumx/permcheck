@@ -167,3 +167,12 @@ The default multiplier for the number of cexes candidates to check when inclusio
 number is calculated as this times the number of neurons in the DNN.
 """
 CEX_PULLBACK_NUM_TOTAL_CANDIDATES_MULT = 3
+
+
+
+""" Config for Debug and Logging """
+
+"""
+If this is true, dump the reaches and safes generated regardless of result.
+"""
+DUMP_ATTEMPT = True
